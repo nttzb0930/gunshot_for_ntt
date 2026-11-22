@@ -52,6 +52,16 @@ static BOOL GSDeleteEnabledHost(void) {
            [[NSBundle.mainBundle objectForInfoDictionaryKey:@"CFBundleShortVersionString"]
                isEqual:@"7.20.2"];
 }
+static BOOL GSDeleteIsRestore(id command) {
+    // In audited 7.20.2, Trash > Restore uses PHSDeletePhotoCommand too:
+    // PHSTrashedPhotosBehaviorImpl.performRestore supplies mutationOperation 2.
+    // Check the scalar getter's ABI before distinguishing this native operation.
+    id context = GSPhotosGetObject(command, @"context");
+    if (!GSPhotosObjectHasMethod(context, @"mutationOperation", "Q16@0:8"))
+        return NO;
+    return ((NSUInteger(*)(id, SEL))objc_msgSend)(context,
+                                                  NSSelectorFromString(@"mutationOperation")) == 2;
+}
 static NSArray *GSDeleteArray(id value) {
     if ([value isKindOfClass:NSArray.class])
         return value;
@@ -80,6 +90,7 @@ static NSDictionary *GSDeleteTargets(id command) {
         return nil;
     NSMutableSet *localIDs = [NSMutableSet set];
     BOOL allBackedUp = YES;
+    BOOL allLocalLookupsComplete = YES;
     id storeResult = GSPhotosGetObject(source, @"storeResult");
     Class cls = NSClassFromString(@"PHSPhotoDeletionStrategy");
     for (id item in items) {
@@ -102,6 +113,7 @@ static NSDictionary *GSDeleteTargets(id command) {
         id mediaKey = GSPhotosGetObject(local, @"mediaKey");
         BOOL backedUp =
             keys.count > 0 || ([mediaKey isKindOfClass:NSString.class] && [mediaKey length]);
+        BOOL localLookupComplete = NO;
         id dedup = GSPhotosGetObject(item, @"localDedupKey");
         if ([dedup isKindOfClass:NSString.class] && [dedup length]) {
             if (!GSPhotosObjectHasMethod(storeResult,
@@ -115,12 +127,14 @@ static NSDictionary *GSDeleteTargets(id command) {
                 storeResult, NSSelectorFromString(@"serverPhotosForLocalDedupKey:"), dedup));
             if (!matches || !serverPhotos)
                 return nil;
+            localLookupComplete = YES;
             for (id match in matches)
                 if (!GSDeleteAddLocal(match, localIDs))
                     return nil;
             backedUp |= serverPhotos.count > 0;
         }
         allBackedUp &= backedUp;
+        allLocalLookupsComplete &= localLookupComplete;
         for (id identifier in ids) {
             if (![identifier isKindOfClass:NSString.class] || ![identifier length] ||
                 [identifier length] > 1024)
@@ -128,13 +142,17 @@ static NSDictionary *GSDeleteTargets(id command) {
             [localIDs addObject:identifier];
         }
     }
-    if (!localIDs.count || localIDs.count > 500)
+    BOOL onlyCloud = !localIDs.count && allBackedUp && allLocalLookupsComplete;
+    if ((!localIDs.count && !onlyCloud) || localIDs.count > 500)
         return nil;
     NSArray *identifiers = localIDs.allObjects;
     if ([PHAsset fetchAssetsWithLocalIdentifiers:identifiers options:nil].count !=
         identifiers.count)
         return nil;
-    return @{@"localIDs" : identifiers, @"allBackedUp" : @(allBackedUp)};
+    return
+        @{@"localIDs" : identifiers,
+          @"allBackedUp" : @(allBackedUp),
+          @"onlyCloud" : @(onlyCloud)};
 }
 static UIViewController *GSDeletePresenter(void) {
     for (UIScene *scene in UIApplication.sharedApplication.connectedScenes) {
@@ -284,14 +302,22 @@ static id GSDeleteStart(id command, BOOL localPhase) {
     id pending = objc_getAssociatedObject(command, promiseKey);
     if (pending)
         return pending;
+    NSString *choice = objc_getAssociatedObject(command, &GSDeleteChoiceKey);
+    NSDictionary *targets = GSDeleteTargets(command);
+    // Nothing local to choose about. Keep the native confirmation and phase
+    // ordering; only bypass when every local lookup succeeded and found no copy.
+    if (!choice && [targets[@"onlyCloud"] boolValue]) {
+        GSDeleteOutcome(@"verified_cloud_only_native");
+        return localPhase
+                   ? GSDeleteLocalOriginal(command, NSSelectorFromString(@"deleteLocalAssets"))
+                   : GSDeleteExecuteOriginal(command, NSSelectorFromString(@"execute"));
+    }
     @synchronized(GSLocalPhotoProtectionStore()) {
         if (localPhase)
             GSLocalPhaseIntercepted++;
         else
             GSDeleteIntercepted++;
     }
-    NSString *choice = objc_getAssociatedObject(command, &GSDeleteChoiceKey);
-    NSDictionary *targets = GSDeleteTargets(command);
     if (!targets && !choice)
         @synchronized(GSLocalPhotoProtectionStore()) {
             GSUnresolvedSelections++;
@@ -315,7 +341,8 @@ static id GSDeleteStart(id command, BOOL localPhase) {
                                      GSL(@"Experimental: keep these photos on this iPhone. New "
                                          @"uploads of these local assets are blocked. GoToHP "
                                          @"backup integration must be enabled. Finish all uploads "
-                                         @"first. Other devices are not protected.")
+                                         @"first. Other devices signed in to the same account may "
+                                         @"still sync the deletion and remove their copies.")
                           preferredStyle:UIAlertControllerStyleAlert];
             UIAlertAction *cloud = [UIAlertAction
                 actionWithTitle:GSL(@"Delete only from Google Photos")
@@ -398,9 +425,13 @@ static id GSDeleteStart(id command, BOOL localPhase) {
     return proxy;
 }
 static id GSDeleteExecute(id command, SEL selector) {
+    if (GSDeleteIsRestore(command))
+        return GSDeleteExecuteOriginal(command, selector);
     return GSDeleteStart(command, NO);
 }
 static id GSDeleteLocal(id command, SEL selector) {
+    if (GSDeleteIsRestore(command))
+        return GSDeleteLocalOriginal(command, selector);
     NSString *choice = objc_getAssociatedObject(command, &GSDeleteChoiceKey);
     if (!choice)
         return GSDeleteStart(command, YES);

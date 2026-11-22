@@ -73,6 +73,15 @@ is retained on the same command so queued cloud execution does not ask again.
 The original local promise result and host queue ordering are preserved. A closing
 confirmation is allowed up to two seconds to dismiss; failure rejects the request
 without automatically continuing native deletion.
+The same command class also handles restoration from Trash. The audited
+`context.mutationOperation == 2` restore operation bypasses the deletion chooser
+at both entry points and forwards the original native result. It does not change
+the persisted local protection or reuse a previous deletion choice.
+Selections confirmed to contain only cloud photos use the original native
+confirmation without an additional destination chooser. This requires successful
+local dedup lookups for every item, no local identities and confirmed cloud media.
+Missing/failed lookups remain unresolved; mixed local/cloud selections retain the
+chooser before local deletion.
 The cloud-only choice requires GoToHP backup integration, resolved backed-up items
 and local PhotoKit identities. Unsupported selections disable the cloud-only
 choice; they never silently select it. Finish imports and uploads before using it.

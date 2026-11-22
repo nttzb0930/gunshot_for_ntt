@@ -257,7 +257,7 @@
   "Choose where to delete": "削除する場所を選択",
   "Delete only from Google Photos": "Google フォトからのみ削除",
   "Use normal deletion (may delete device copy)": "通常の削除（端末のコピーも削除される場合があります）",
-  "Experimental: keep these photos on this iPhone. New uploads of these local assets are blocked. GoToHP backup integration must be enabled. Finish all uploads first. Other devices are not protected.": "試験機能：この iPhone 上の写真を保持し、同じローカル写真の再アップロードをブロックします。GoToHP のバックアップ連携が必要です。先にすべてのアップロードを完了してください。他の端末は保護されません。",
+  "Experimental: keep these photos on this iPhone. New uploads of these local assets are blocked. GoToHP backup integration must be enabled. Finish all uploads first. Other devices signed in to the same account may still sync the deletion and remove their copies.": "試験機能：この iPhone 上の写真を保持し、同じローカル写真の再アップロードをブロックします。GoToHP のバックアップ連携が必要です。先にすべてのアップロードを完了してください。同じアカウントでログインしている他の端末では、Google フォトの削除が同期され、端末上の写真も削除される場合があります。",
   "The signed-in account changed. Nothing was deleted.": "ログイン中のアカウントが変わりました。何も削除していません。",
   "Could not save local photo protection. Nothing was deleted.": "ローカル写真の保護設定を保存できません。何も削除していません。",
   "The deletion result is unknown. Check Google Photos before retrying.": "削除結果が不明です。再試行する前に Google フォトを確認してください。",

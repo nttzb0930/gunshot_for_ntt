@@ -257,7 +257,7 @@
   "Choose where to delete": "Choose where to delete",
   "Delete only from Google Photos": "Delete only from Google Photos",
   "Use normal deletion (may delete device copy)": "Use normal deletion (may delete device copy)",
-  "Experimental: keep these photos on this iPhone. New uploads of these local assets are blocked. GoToHP backup integration must be enabled. Finish all uploads first. Other devices are not protected.": "Experimental: keep these photos on this iPhone. New uploads of these local assets are blocked. GoToHP backup integration must be enabled. Finish all uploads first. Other devices are not protected.",
+  "Experimental: keep these photos on this iPhone. New uploads of these local assets are blocked. GoToHP backup integration must be enabled. Finish all uploads first. Other devices signed in to the same account may still sync the deletion and remove their copies.": "Experimental: keep these photos on this iPhone. New uploads of these local assets are blocked. GoToHP backup integration must be enabled. Finish all uploads first. Other devices signed in to the same account may still sync the deletion and remove their copies.",
   "The signed-in account changed. Nothing was deleted.": "The signed-in account changed. Nothing was deleted.",
   "Could not save local photo protection. Nothing was deleted.": "Could not save local photo protection. Nothing was deleted.",
   "The deletion result is unknown. Check Google Photos before retrying.": "The deletion result is unknown. Check Google Photos before retrying.",

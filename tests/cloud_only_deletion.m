@@ -8,6 +8,7 @@ static GSLocalPhotoProtection *FixtureStore;
 static UIViewController *FixturePresenter;
 static NSArray *DeletedAssets;
 static NSUInteger CloudCalls;
+static NSUInteger RestoreCalls, RestoreLocalCalls;
 static BOOL AccountMatches = YES, QueueBusy, FailCloud;
 static NSString *FixtureVersion = @"7.20.2";
 GSLocalPhotoProtection *GSFixtureSharedStore(void) {
@@ -109,6 +110,8 @@ NSDictionary *GSRequest(NSDictionary *request, NSError **error) {
 @end
 @implementation GSFixtureStoreResult
 - (id)localAssetsForLocalDedupKey:(id)key {
+    if ([key isEqual:@"dedup-cloud"])
+        return @[];
     assert([key isEqual:@"dedup-a"]);
     GSFixtureLocalAsset *local = [GSFixtureLocalAsset new];
     local.phAsset = [PHAsset new];
@@ -177,11 +180,17 @@ NSDictionary *GSRequest(NSDictionary *request, NSError **error) {
     return self;
 }
 @end
+@interface GSFixtureMutationContext : NSObject
+@property (nonatomic) NSUInteger mutationOperation;
+@end
+@implementation GSFixtureMutationContext
+@end
 @interface PHSDeletePhotoCommand : NSObject
 @property (nonatomic, strong) NSArray *mediaItems;
 @property (nonatomic, copy) NSString *accountID;
 @property (nonatomic) NSUInteger serverPhotoCount;
 @property (nonatomic, strong) GSFixtureDataSource *dataSource;
+@property (nonatomic, strong) GSFixtureMutationContext *context;
 - (id)fixtureExecute;
 - (id)deleteLocalAssets;
 @end
@@ -191,6 +200,12 @@ NSDictionary *GSRequest(NSDictionary *request, NSError **error) {
 @end
 @implementation PHSDeletePhotoCommand
 - (id)fixtureExecute {
+    if (self.context.mutationOperation == 2) {
+        RestoreCalls++;
+        GPCPromise *result = [GPCPromise new];
+        [result resolve:@"native-restore-result"];
+        return result;
+    }
     CloudCalls++;
     [self deleteLocalAssets];
     assert(self.mediaItems.count == 1); // Temporary masking must not change the cloud selection.
@@ -202,8 +217,16 @@ NSDictionary *GSRequest(NSDictionary *request, NSError **error) {
     return result;
 }
 - (id)deleteLocalAssets {
+    if (self.context.mutationOperation == 2) {
+        RestoreLocalCalls++;
+        GPCPromise *result = [GPCPromise new];
+        [result resolve:@"native-restore-local-result"];
+        return result;
+    }
     NSMutableArray *assets = [NSMutableArray array];
     for (GSFixtureMediaItem *item in self.mediaItems) {
+        if (!item.assetID.length)
+            continue;
         PHAsset *asset = [PHAsset new];
         asset.localIdentifier = item.assetID;
         [assets addObject:asset];
@@ -219,6 +242,8 @@ NSDictionary *GSRequest(NSDictionary *request, NSError **error) {
 static PHSDeletePhotoCommand *Command(void) {
     PHSDeletePhotoCommand *command = [PHSDeletePhotoCommand new];
     command.accountID = @"account";
+    command.context = [GSFixtureMutationContext new];
+    command.context.mutationOperation = 1;
     GSFixtureMediaItem *item = [GSFixtureMediaItem new];
     item.assetID = @"local-a";
     item.localDedupKey = @"dedup-a";
@@ -472,9 +497,80 @@ int main(int argc, char **argv) {
         assert([GSCloudOnlyDeletionSnapshot()[@"localPhaseIntercepted"] unsignedIntegerValue] == 4);
         assert([GSCloudOnlyDeletionSnapshot()[@"executeHookActive"] boolValue]);
         AccountMatches = YES;
+
+        // The same host command class is also used for restoration (operation 2).
+        // Neither entry point may present deletion choices or change protection.
+        NSUInteger choicesBeforeRestore =
+            [GSCloudOnlyDeletionSnapshot()[@"choicesShown"] unsignedIntegerValue];
+        NSUInteger protectedBeforeRestore = FixtureStore.count;
+        NSUInteger executeBeforeRestore = GSDeleteIntercepted;
+        NSUInteger localBeforeRestore = GSLocalPhaseIntercepted;
+        command = Command();
+        command.context.mutationOperation = 2;
+        local = [command deleteLocalAssets];
+        assert([local.value isEqual:@"native-restore-local-result"] && !local.failure);
+        proxy = [command execute];
+        assert([proxy.value isEqual:@"native-restore-result"] && !proxy.failure);
+        assert(RestoreCalls == 1 && RestoreLocalCalls == 1);
+        assert(CloudCalls == cloudBeforeLocalPhase + 2 && DeletedAssets == nil);
+        assert(FixtureStore.count == protectedBeforeRestore);
+        assert(GSDeleteIntercepted == executeBeforeRestore &&
+               GSLocalPhaseIntercepted == localBeforeRestore);
+        assert([GSCloudOnlyDeletionSnapshot()[@"choicesShown"] unsignedIntegerValue] ==
+               choicesBeforeRestore);
+        assert(FixturePresenter.presentedViewController == nil);
+        assert(!objc_getAssociatedObject(command, &GSDeletePromiseKey) &&
+               !objc_getAssociatedObject(command, &GSDeleteLocalPromiseKey));
+
+        // A reused command's previous delete choice must not override restoration.
+        objc_setAssociatedObject(command, &GSDeleteChoiceKey, @"cloud",
+                                 OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+        local = [command deleteLocalAssets];
+        proxy = [command execute];
+        assert([local.value isEqual:@"native-restore-local-result"]);
+        assert([proxy.value isEqual:@"native-restore-result"]);
+        assert(RestoreCalls == 2 && RestoreLocalCalls == 2);
+        assert(CloudCalls == cloudBeforeLocalPhase + 2 && DeletedAssets == nil &&
+               FixtureStore.count == protectedBeforeRestore);
+
+        // A verified cloud-only item needs only the host's existing confirmation.
+        NSUInteger choicesBeforeCloudOnly = GSDeleteChoicesShown;
+        NSUInteger callsBeforeCloudOnly = CloudCalls;
+        command = Command();
+        GSFixtureMediaItem *remote = [GSFixtureMediaItem new];
+        remote.localDedupKey = @"dedup-cloud";
+        command.mediaItems = @[ remote ];
+        local = [command deleteLocalAssets];
+        assert(local.value && !local.failure && DeletedAssets == nil);
+        proxy = [command execute];
+        assert(proxy.value && !proxy.failure && CloudCalls == callsBeforeCloudOnly + 1);
+        assert(GSDeleteChoicesShown == choicesBeforeCloudOnly &&
+               FixturePresenter.presentedViewController == nil);
+        assert(FixtureStore.count == protectedBeforeRestore);
+
+        // An unavailable local lookup must not be treated as proof of cloud-only status.
+        command = Command();
+        command.mediaItems = @[ remote ];
+        command.dataSource.storeResult = nil;
+        local = [command deleteLocalAssets];
+        Choose(2);
+        assert(local.failure && !local.value && CloudCalls == callsBeforeCloudOnly + 1);
+        assert(DeletedAssets == nil);
+
+        // Mixed cloud/local selections still require an explicit choice before deletion.
+        command = Command();
+        command.mediaItems = @[ command.mediaItems.firstObject, remote ];
+        local = [command deleteLocalAssets];
+        PumpUntil(^BOOL {
+            return FixturePresenter.presentedViewController != nil;
+        });
+        Choose(((UIAlertController *)FixturePresenter.presentedViewController).actions.count - 1);
+        assert(local.failure && !local.value && CloudCalls == callsBeforeCloudOnly + 1);
+        assert(DeletedAssets == nil && FixtureStore.count == protectedBeforeRestore);
         [NSFileManager.defaultManager removeItemAtURL:root error:nil];
-        NSLog(@"PASS synthetic cloud-only choice, cancellation, native promise forwarding, local "
-              @"protection, sync filtering, modal dismissal, local-first host ordering, "
-              @"queue/account guards and normal deletion");
+        NSLog(
+            @"PASS synthetic cloud-only choice, cancellation, native promise forwarding, local "
+            @"protection, sync filtering, modal dismissal, local-first host ordering, "
+            @"queue/account guards, normal deletion, restore and verified cloud-only passthrough");
     }
 }

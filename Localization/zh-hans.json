@@ -257,7 +257,7 @@
   "Choose where to delete": "选择删除位置",
   "Delete only from Google Photos": "仅从 Google 相册删除",
   "Use normal deletion (may delete device copy)": "正常删除（可能删除设备副本）",
-  "Experimental: keep these photos on this iPhone. New uploads of these local assets are blocked. GoToHP backup integration must be enabled. Finish all uploads first. Other devices are not protected.": "实验功能：保留此 iPhone 上的照片并阻止重新上传这些本地照片。需要启用 GoToHP 备份集成。请先完成所有上传。其他设备不受保护。",
+  "Experimental: keep these photos on this iPhone. New uploads of these local assets are blocked. GoToHP backup integration must be enabled. Finish all uploads first. Other devices signed in to the same account may still sync the deletion and remove their copies.": "实验功能：保留此 iPhone 上的照片并阻止重新上传这些本地照片。需要启用 GoToHP 备份集成。请先完成所有上传。登录同一账号的其他设备仍可能通过 Google 相册同步删除操作，导致设备上的照片副本也被删除。",
   "The signed-in account changed. Nothing was deleted.": "登录账号已更改。未删除任何内容。",
   "Could not save local photo protection. Nothing was deleted.": "无法保存本地照片保护。未删除任何内容。",
   "The deletion result is unknown. Check Google Photos before retrying.": "删除结果未知。请先检查 Google 相册再重试。",
