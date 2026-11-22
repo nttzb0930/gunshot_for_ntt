@@ -48,6 +48,9 @@ func (e *Engine) begin(r Request, owner string) (any, error) {
 		return nil, err
 	}
 	j := &Job{ID: id, Account: r.Account, Quality: r.Quality, Resources: r.Resources, State: "importing", Created: time.Now().Unix(), Timestamp: r.Timestamp, Total: total, Owner: owner}
+	if c := e.state.AlbumConfigs[r.Account]; c != nil && c.Enabled {
+		j.AlbumTargets = []string{c.TargetID}
+	}
 	for _, f := range r.Resources {
 		file, err := os.OpenFile(filepath.Join(e.jobDir(id), f.Name), os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0600)
 		if err != nil {
@@ -131,6 +134,10 @@ func (e *Engine) seal(j *Job) (any, error) {
 			continue
 		}
 		if old.ID != j.ID && old.Fingerprint == fingerprint && old.State != "cancelled" {
+			for _, target := range j.AlbumTargets {
+				old.AlbumTargets = appendUnique(old.AlbumTargets, target)
+			}
+			e.enqueueAlbum(old)
 			j.State = "cancelled"
 			if err := e.save(); err != nil {
 				return nil, err

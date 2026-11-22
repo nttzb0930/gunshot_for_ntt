@@ -78,6 +78,8 @@ if [[ ${1:-all} == jailed || ${1:-all} == all ]]; then
   .build/photos-integration-policy-test
   clang -fobjc-arc -framework Foundation Native/GSUploadDiagnostics.m tests/upload_diagnostics.m -o .build/upload-diagnostics-test
   .build/upload-diagnostics-test
+  clang -fobjc-arc -framework Foundation UI/GSAlbumStatus.m tests/album_status.m -o .build/album-status-test
+  .build/album-status-test
   clang -fobjc-arc -framework Foundation Native/GSNativeAccount.m tests/native_account.m -o .build/native-account-test
   .build/native-account-test
   clang -fobjc-arc -framework Foundation -Itests/menu-shims -Itests/native-shims UI/GSAccountMenu.m tests/account_menu.m -o .build/account-menu-test

@@ -12,6 +12,8 @@ static atomic_int ActiveExports, PeakExports;
 static NSArray *ExpectedResources;
 static NSArray *FixtureResources;
 static BOOL RejectAppend;
+static BOOL AlbumBatchHeld;
+static BOOL RunningBatch;
 static NSMutableArray<NSMutableData *> *Received;
 static NSData *OriginalBytes(BOOL movie) {
     NSMutableData *bytes = [NSMutableData dataWithLength:70013];
@@ -103,7 +105,13 @@ NSDictionary *GSRequest(NSDictionary *request, NSError **error) {
         return @{@"selected" : @"fixture@example.com"};
     if ([op isEqual:@"options"])
         return @{@"quality" : @"original"};
+    if ([op isEqual:@"album_batch"]) {
+        AlbumBatchHeld = [request[@"confirm"] boolValue];
+        return @{};
+    }
     if ([op isEqual:@"begin"]) {
+        if (RunningBatch)
+            assert(AlbumBatchHeld);
         assert([request[@"quality"] isEqual:@"original"] &&
                [request[@"account"] isEqual:@"fixture@example.com"] &&
                [request[@"timestamp"] longLongValue] == 123);
@@ -182,6 +190,7 @@ static void CheckRendition(NSArray *resources, PHAssetMediaType media, BOOL live
     FixtureResources = nil;
 }
 static NSDictionary *Run(void) {
+    RunningBatch = YES;
     __block NSDictionary *done = nil;
     assert(GSStartBatchImport(
         60, @"album", YES,
@@ -201,7 +210,8 @@ static NSDictionary *Run(void) {
     NSDate *deadline = [NSDate dateWithTimeIntervalSinceNow:20];
     while (!done && deadline.timeIntervalSinceNow > 0)
         [NSRunLoop.currentRunLoop runUntilDate:[NSDate dateWithTimeIntervalSinceNow:0.001]];
-    assert(done);
+    assert(done && !AlbumBatchHeld);
+    RunningBatch = NO;
     return done;
 }
 int main(void) {

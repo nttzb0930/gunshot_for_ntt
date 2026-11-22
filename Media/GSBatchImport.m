@@ -82,6 +82,23 @@ BOOL GSStartBatchImport(NSUInteger count, NSString *source, BOOL assets,
             if (!reason && !options)
                 reason = @"service_unavailable";
             NSString *quality = options[@"quality"] ?: @"original";
+            NSString *leaseID = NSUUID.UUID.UUIDString;
+            dispatch_queue_t leaseQueue =
+                dispatch_queue_create("dev.tqmane.gunshot.album-import", DISPATCH_QUEUE_SERIAL);
+            dispatch_source_t lease =
+                dispatch_source_create(DISPATCH_SOURCE_TYPE_TIMER, 0, 0, leaseQueue);
+            NSDictionary *hold =
+                @{@"op" : @"album_batch",
+                  @"account" : account,
+                  @"id" : leaseID,
+                  @"confirm" : @YES};
+            GSRequest(hold, nil);
+            dispatch_source_set_timer(lease, dispatch_time(DISPATCH_TIME_NOW, 10 * NSEC_PER_SEC),
+                                      10 * NSEC_PER_SEC, NSEC_PER_SEC);
+            dispatch_source_set_event_handler(lease, ^{
+                GSRequest(hold, nil);
+            });
+            dispatch_resume(lease);
             NSUInteger processed = 0, queued = 0, failed = 0;
             NSMutableDictionary *failures = [NSMutableDictionary dictionary];
             NSTimeInterval lastUpdate = 0;
@@ -177,6 +194,17 @@ BOOL GSStartBatchImport(NSUInteger count, NSString *source, BOOL assets,
                     }
                 }
             }
+            dispatch_sync(leaseQueue, ^{
+                dispatch_source_cancel(lease);
+                GSRequest(
+                    @{
+                        @"op" : @"album_batch",
+                        @"account" : account,
+                        @"id" : leaseID,
+                        @"confirm" : @NO
+                    },
+                    nil);
+            });
             state[@"active"] = @NO;
             state[@"stage"] = reason ? @"stopped" : @"finished";
             if (reason)

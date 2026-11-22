@@ -6,6 +6,7 @@ static NSString *Identity = @"identity-A", *Account = @"a@example.com";
 static NSUInteger Queued, Exports, Fetches, MaxFetch, LiveAssets, PeakAssets;
 static BOOL FailExport, FailQueue, SwitchDuringExport, CancelDuringExport, Offline;
 static NSString *LastDirectory;
+static BOOL AlbumBatchHeld;
 @interface PHFetchResult ()
 @property (nonatomic, strong) NSArray *items;
 @end
@@ -62,6 +63,10 @@ NSDictionary *GSRequest(NSDictionary *request, NSError **error) {
         return @{@"selected" : Account};
     if ([request[@"op"] isEqual:@"options"])
         return @{@"quality" : @"original"};
+    if ([request[@"op"] isEqual:@"album_batch"]) {
+        AlbumBatchHeld = [request[@"confirm"] boolValue];
+        return @{};
+    }
     assert(NO);
     return nil;
 }
@@ -95,6 +100,7 @@ NSArray *GSExportAsset(PHAsset *asset, NSURL *directory, NSError **error) {
 }
 NSString *GSImportFiles(NSArray *files, NSString *account, NSString *quality, NSDate *date,
                         NSError **error) {
+    assert(AlbumBatchHeld);
     assert(!NSThread.isMainThread && [account isEqual:@"a@example.com"] &&
            [quality isEqual:@"original"]);
     assert(date.timeIntervalSince1970 == 123);
@@ -122,7 +128,7 @@ static NSDictionary *Run(NSArray *ids) {
     NSDate *deadline = [NSDate dateWithTimeIntervalSinceNow:30];
     while (!done && deadline.timeIntervalSinceNow > 0)
         [NSRunLoop.currentRunLoop runUntilDate:[NSDate dateWithTimeIntervalSinceNow:0.001]];
-    assert(done && ![done[@"active"] boolValue]);
+    assert(done && ![done[@"active"] boolValue] && !AlbumBatchHeld);
     if (LastDirectory)
         assert(![NSFileManager.defaultManager fileExistsAtPath:LastDirectory]);
     return done;

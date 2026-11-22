@@ -11,13 +11,13 @@ func roleAllowed(role, op string) bool {
 	switch op {
 	case "conditions":
 		return role == "daemon"
-	case "upload_summary", "job", "ping", "list", "accounts", "options", "retry", "cancel", "clear_completed", "retry_failed":
+	case "album_catalog", "album_status", "upload_summary", "job", "ping", "list", "accounts", "options", "retry", "cancel", "clear_completed", "retry_failed":
 		return role == "photos" || role == "googlephotos" || role == "settings"
-	case "begin", "append", "seal":
+	case "album_batch", "begin", "append", "seal":
 		return role == "photos" || role == "googlephotos"
 	case "account_native", "native_bearer", "native_bearer_clear":
 		return role == "googlephotos"
-	case "configure", "account_add", "account_remove", "account_select":
+	case "album_retarget", "album_configure", "album_retry", "album_resolve", "configure", "account_add", "account_remove", "account_select":
 		return role == "settings" || role == "googlephotos"
 	default:
 		return false
@@ -55,6 +55,41 @@ func response(data any, err error) []byte {
 }
 func (e *Engine) handle(r Request, role string) (any, error) {
 	switch r.Op {
+	case "album_catalog":
+		if !accountExists(r.Account) {
+			return nil, errRequest
+		}
+		return e.catalogView(r.Account, r.Cursor, r.Confirm)
+	case "album_batch":
+		if !accountExists(r.Account) {
+			return nil, errRequest
+		}
+		return nil, e.albumBatch(r.Account, r.ID, r.Confirm)
+	case "album_status", "album_configure", "album_retry", "album_resolve", "album_retarget":
+		if !accountExists(r.Account) {
+			return nil, errRequest
+		}
+		switch r.Op {
+		case "album_status":
+			return e.albumView(r.Account), nil
+		case "album_configure":
+			if r.Album == nil {
+				return nil, errRequest
+			}
+			return nil, e.configureAlbum(r.Account, *r.Album)
+		case "album_retry":
+			return nil, e.retryAlbum(r.Account, r.Confirm)
+		case "album_resolve":
+			if r.Album == nil {
+				return nil, errRequest
+			}
+			return nil, e.resolveAlbum(r.Account, r.ID, r.Album.AlbumKey)
+		case "album_retarget":
+			if r.Album == nil {
+				return nil, errRequest
+			}
+			return nil, e.repairAlbum(r.Account, r.ID, r.Album.AlbumKey)
+		}
 	case "ping":
 		return map[string]any{"version": 1}, nil
 	case "options":
@@ -66,6 +101,9 @@ func (e *Engine) handle(r Request, role string) (any, error) {
 		e.wifi = r.WiFi
 		e.charging = r.Charging
 		if !e.online || (e.state.Options.WiFiOnly && !e.wifi) || (e.state.Options.ChargingOnly && !e.charging) {
+			if e.albumCancel != nil {
+				e.albumCancel()
+			}
 			for _, c := range e.active {
 				c()
 			}
@@ -78,6 +116,9 @@ func (e *Engine) handle(r Request, role string) (any, error) {
 		changed := e.state.Options != *r.Options
 		e.state.Options = *r.Options
 		if r.Options.Paused || (r.Options.WiFiOnly && !e.wifi) || (r.Options.ChargingOnly && !e.charging) {
+			if e.albumCancel != nil {
+				e.albumCancel()
+			}
 			for _, c := range e.active {
 				c()
 			}

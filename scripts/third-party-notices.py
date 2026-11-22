@@ -25,6 +25,13 @@ parts.extend(
         pathlib.Path("GotohpCore/upstream/LICENSE").read_text(),
     ]
 )
+parts.extend(
+    [
+        "gpmc album collection protocol mask — MIT License\n"
+        "Source: https://github.com/xob0t/gpmc/tree/94b1b267ca6819da542d4330a7dd216747eb0437",
+        pathlib.Path("GotohpCore/GPMC-LICENSE").read_text(),
+    ]
+)
 goroot = pathlib.Path(
     subprocess.check_output(["go", "env", "GOROOT"], text=True).strip()
 )

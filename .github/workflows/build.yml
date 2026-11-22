@@ -1,7 +1,7 @@
 name: Build and test
 on:
   push:
-    branches: [main]
+    branches: [main, feat/album-management-clean]
     tags: ['v*']
   pull_request:
   workflow_dispatch:
@@ -27,6 +27,7 @@ jobs:
       - run: python3 -m pip install clang-format==18.1.8 black==25.1.0
       - run: python3 scripts/format.py --check
       - run: bash scripts/test-core.sh
+      - run: python3 scripts/test_ios_minimum.py
   package:
     runs-on: macos-15
     strategy:
@@ -93,6 +94,8 @@ jobs:
         run: bash scripts/package.sh jailed
       - name: Verify package layout
         run: python3 scripts/verify-package.py jailed
+      - name: Verify deployment target against build configuration
+        run: python3 scripts/verify-ios-minimum.py packages/jailed/GunshotJailed.dylib --makefile Jailed/Makefile
       - uses: actions/upload-artifact@v4
         with:
           name: gotohp-tweak-jailed
@@ -100,6 +103,7 @@ jobs:
             packages/jailed/*.deb
             packages/jailed/*.dylib
             packages/jailed/ThirdPartyNotices.txt
+            docs/album-management.md
           if-no-files-found: error
   release:
     if: startsWith(github.ref, 'refs/tags/v') || (github.event_name == 'workflow_dispatch' && startsWith(inputs.release_tag, 'v'))

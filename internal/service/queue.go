@@ -22,6 +22,7 @@ func (e *Engine) Tick() {
 		return
 	}
 	now := time.Now().Unix()
+	defer e.tickAlbums()
 	for _, j := range e.state.Jobs {
 		if len(e.active) >= e.state.Options.Concurrent {
 			return
@@ -63,6 +64,12 @@ func (e *Engine) execute(ctx context.Context, snapshot Job, paths []string) {
 			return
 		}
 		old := j.State
+		if p.MediaKey != "" {
+			j.MediaKeys = appendUnique(j.MediaKeys, p.MediaKey)
+			if e.save() != nil {
+				e.active[j.ID]()
+			}
+		}
 		if p.State == "uploading" || p.State == "committing" || p.State == "preparing" {
 			j.State = p.State
 		}
@@ -87,8 +94,10 @@ func (e *Engine) execute(ctx context.Context, snapshot Job, paths []string) {
 		e.state.CompletionRevision++
 		j.State = "completed"
 		j.MediaKey = key
+		j.MediaKeys = appendUnique(j.MediaKeys, key)
 		j.Uploaded = j.Total
 		j.Error = ""
+		e.enqueueAlbum(j)
 	case errors.Is(err, errRemoteComponentExists):
 		j.State = "failed"
 		j.Error = "remote_live_photo_component_exists"

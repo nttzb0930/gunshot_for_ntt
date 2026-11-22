@@ -183,7 +183,8 @@ NSDictionary *GSRequest(NSDictionary *request, NSError **error) {
         if (native)
             GSRecord(@{@"authorization" : @"checking"});
         result =
-            GSCall(request, [@[ @"begin", @"append", @"seal", @"account_native" ] containsObject:op]
+            GSCall(request, [@[ @"begin", @"append", @"seal", @"account_native", @"album_batch" ]
+                                containsObject:op]
                                 ? "googlephotos"
                                 : "settings");
         if (result && [op isEqual:@"upload_summary"])
