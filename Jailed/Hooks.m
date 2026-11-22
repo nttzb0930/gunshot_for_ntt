@@ -6,6 +6,7 @@
 #import "../Native/GSPhotosIntegration.h"
 #import "../Native/GSAccountConnection.h"
 #import "../Native/GSUploadMonitor.h"
+#import "../Native/GSCloudOnlyDeletion.h"
 #import "SideloadKeychain.h"
 #import "SideloadIdentity.h"
 
@@ -41,6 +42,7 @@ __attribute__((constructor)) static void GSLoadJailed(void) {
                         }];
             GSInstallAccountMenu();
             GSStartBackupIntegration();
+            GSInstallCloudOnlyDeletion();
             Method activity = class_getInstanceMethod(UIActivityViewController.class,
                                                       @selector(initWithActivityItems:
                                                                 applicationActivities:));

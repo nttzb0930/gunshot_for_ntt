@@ -1,5 +1,6 @@
 #import "../Shared/GSLocalization.h"
 #import "GSExporter.h"
+#import "../Native/GSLocalPhotoProtection.h"
 #import "../Shared/IPCProtocol.h"
 #import <UniformTypeIdentifiers/UniformTypeIdentifiers.h>
 
@@ -95,6 +96,17 @@ static NSArray<NSURL *> *GSWriteCurrentResources(PHAsset *asset, NSURL *director
     return files;
 }
 NSArray<NSURL *> *GSExportAsset(PHAsset *asset, NSURL *directory, NSError **error) {
+    if ([GSLocalPhotoProtectionStore() contains:asset.localIdentifier]) {
+        if (error)
+            *error = [NSError
+                errorWithDomain:@"GoToHP.LocalProtection"
+                           code:2
+                       userInfo:@{
+                           NSLocalizedDescriptionKey :
+                               GSL(@"This local photo is protected after a cloud-only deletion.")
+                       }];
+        return nil;
+    }
     // Native backup may schedule many assets simultaneously. Keep PhotoKit/cloud
     // resource preparation bounded across native, album, picker and share routes;
     // this does not change the queue's network upload concurrency.

@@ -3,6 +3,12 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 if [[ $(uname -s) != Darwin ]]; then echo "Native fixtures require macOS and Xcode." >&2; exit 1; fi
 mkdir -p .build
+clang -fobjc-arc -framework Foundation Native/GSLocalPhotoProtection.m tests/local_photo_protection.m -o .build/local-photo-protection-test
+.build/local-photo-protection-test
+clang -fobjc-arc -framework Foundation -Itests/delete-shims Native/GSLocalPhotoProtection.m tests/cloud_only_deletion.m -o .build/cloud-only-deletion-test
+.build/cloud-only-deletion-test
+.build/cloud-only-deletion-test unknown-version
+.build/cloud-only-deletion-test abi
 case "${1:-all}" in
   jailbreak|jailed|all) ;;
   *) echo "Usage: bash scripts/test-native.sh [jailbreak|jailed|all]" >&2; exit 1;;
@@ -35,9 +41,9 @@ if [[ ${1:-all} == jailbreak || ${1:-all} == all ]]; then
   clang -fobjc-arc -DGS_JAILED=1 -DGS_TEST_AUTOCONNECT=1 -DGS_TEST_LEGACY=1 -framework Foundation Native/GSNativeAccount.m Native/GSAccountConnection.m tests/native_account.m -o .build/native-autoconnect-jailed-legacy-test
   .build/native-autoconnect-jailed-legacy-test
   # Jailbreak backup routing and shared completion monitor
-  clang -fobjc-arc -framework Foundation -Itests/native-shims Native/GSNativeAccount.m Native/GSNativeRouting.m Native/GSBackupRequests.m tests/backup_requests.m -o .build/daemon-backup-test
+  clang -fobjc-arc -framework Foundation -Itests/native-shims Native/GSNativeAccount.m Native/GSNativeRouting.m Native/GSBackupRequests.m Native/GSLocalPhotoProtection.m tests/backup_requests.m -o .build/daemon-backup-test
   .build/daemon-backup-test
-  clang -fobjc-arc -DGS_TEST_LEGACY=1 -framework Foundation -Itests/native-shims Native/GSNativeAccount.m Native/GSNativeRouting.m Native/GSBackupRequests.m tests/backup_requests.m -o .build/daemon-backup-legacy-test
+  clang -fobjc-arc -DGS_TEST_LEGACY=1 -framework Foundation -Itests/native-shims Native/GSNativeAccount.m Native/GSNativeRouting.m Native/GSBackupRequests.m Native/GSLocalPhotoProtection.m tests/backup_requests.m -o .build/daemon-backup-legacy-test
   .build/daemon-backup-legacy-test
   clang -fobjc-arc -framework Foundation -Itests/native-shims Native/GSNativeAccount.m Native/GSUploadMonitor.m Native/GSPhotosIntegration.m tests/upload_monitor.m -o .build/upload-monitor-test
   .build/upload-monitor-test
@@ -70,7 +76,7 @@ if [[ ${1:-all} == jailed || ${1:-all} == all ]]; then
   .build/native-routing-test
   clang -fobjc-arc -DGS_JAILED=1 -framework Foundation -Itests/native-shims Native/GSNativeRouting.m tests/native_routing.m -o .build/silent-jailed-routing-test
   .build/silent-jailed-routing-test
-  clang -fobjc-arc -DGS_JAILED=1 -framework Foundation -Itests/native-shims Native/GSNativeAccount.m Native/GSNativeRouting.m Native/GSBackupRequests.m tests/backup_requests.m -o .build/backup-requests-test
+  clang -fobjc-arc -DGS_JAILED=1 -framework Foundation -Itests/native-shims Native/GSNativeAccount.m Native/GSNativeRouting.m Native/GSBackupRequests.m Native/GSLocalPhotoProtection.m tests/backup_requests.m -o .build/backup-requests-test
   .build/backup-requests-test
   clang -fobjc-arc -framework Foundation -Itests/native-shims Native/GSPhotosIntegration.m tests/photos_integration.m -o .build/photos-integration-test
   .build/photos-integration-test
@@ -92,7 +98,7 @@ if [[ ${1:-all} == jailed || ${1:-all} == all ]]; then
   .build/native-routing-legacy-test
   clang -fobjc-arc -DGS_TEST_LEGACY=1 -DGS_JAILED=1 -framework Foundation -Itests/native-shims Native/GSNativeRouting.m tests/native_routing.m -o .build/silent-jailed-routing-legacy-test
   .build/silent-jailed-routing-legacy-test
-  clang -fobjc-arc -DGS_TEST_LEGACY=1 -DGS_JAILED=1 -framework Foundation -Itests/native-shims Native/GSNativeAccount.m Native/GSNativeRouting.m Native/GSBackupRequests.m tests/backup_requests.m -o .build/backup-requests-legacy-test
+  clang -fobjc-arc -DGS_TEST_LEGACY=1 -DGS_JAILED=1 -framework Foundation -Itests/native-shims Native/GSNativeAccount.m Native/GSNativeRouting.m Native/GSBackupRequests.m Native/GSLocalPhotoProtection.m tests/backup_requests.m -o .build/backup-requests-legacy-test
   .build/backup-requests-legacy-test
   clang -fobjc-arc -DGS_TEST_LEGACY=1 -framework Foundation -Itests/native-shims Native/GSPhotosIntegration.m tests/photos_integration.m -o .build/photos-integration-legacy-test
   .build/photos-integration-legacy-test
@@ -124,6 +130,6 @@ if [[ ${1:-all} == jailed || ${1:-all} == all ]]; then
   # Bulk photo import
   clang -fobjc-arc -framework Foundation -Itests/native-shims Media/GSBatchImport.m tests/batch_import.m -o .build/batch-import-test
   .build/batch-import-test
-  clang -fobjc-arc -framework Foundation -framework UniformTypeIdentifiers -Itests/native-shims Media/GSBatchImport.m Media/GSExporter.m tests/exporter_batch.m -o .build/exporter-batch-test
+  clang -fobjc-arc -framework Foundation -framework UniformTypeIdentifiers -Itests/native-shims Media/GSBatchImport.m Media/GSExporter.m Native/GSLocalPhotoProtection.m tests/exporter_batch.m -o .build/exporter-batch-test
   .build/exporter-batch-test
 fi

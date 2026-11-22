@@ -1,7 +1,7 @@
 name: Build and test
 on:
   push:
-    branches: [main, feat/album-management-clean]
+    branches: [main, feat/album-management-clean, feat/cloud-only-deletion]
     tags: ['v*']
   pull_request:
   workflow_dispatch:

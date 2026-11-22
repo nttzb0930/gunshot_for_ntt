@@ -16,6 +16,8 @@ GUNSHOT_HOST_FILES = \
 	Media/GSExporter.m \
 	Native/GSNativeRouting.m \
 	Native/GSBackupRequests.m \
+	Native/GSLocalPhotoProtection.m \
+	Native/GSCloudOnlyDeletion.m \
 	Native/GSPhotosIntegration.m \
 	Native/GSUploadMonitor.m \
 	Native/GSBackupLifecycle.m \

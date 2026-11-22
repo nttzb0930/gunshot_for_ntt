@@ -253,5 +253,16 @@
   "Album status": "Album status",
   "Paste": "Paste",
   "Shared albums may require permission to add photos.": "Shared albums may require permission to add photos.",
-  "Choose photos, an album destination, and view progress": "Choose photos, an album destination, and view progress"
+  "Choose photos, an album destination, and view progress": "Choose photos, an album destination, and view progress",
+  "Choose where to delete": "Choose where to delete",
+  "Delete only from Google Photos": "Delete only from Google Photos",
+  "Use normal deletion (may delete device copy)": "Use normal deletion (may delete device copy)",
+  "Experimental: keep these photos on this iPhone. New uploads of these local assets are blocked. GoToHP backup integration must be enabled. Finish all uploads first. Other devices are not protected.": "Experimental: keep these photos on this iPhone. New uploads of these local assets are blocked. GoToHP backup integration must be enabled. Finish all uploads first. Other devices are not protected.",
+  "The signed-in account changed. Nothing was deleted.": "The signed-in account changed. Nothing was deleted.",
+  "Could not save local photo protection. Nothing was deleted.": "Could not save local photo protection. Nothing was deleted.",
+  "The deletion result is unknown. Check Google Photos before retrying.": "The deletion result is unknown. Check Google Photos before retrying.",
+  "Could not confirm the deletion context. Nothing was deleted.": "Could not confirm the deletion context. Nothing was deleted.",
+  "Wait for all GoToHP uploads to finish before deleting only from Google Photos.": "Wait for all GoToHP uploads to finish before deleting only from Google Photos.",
+  "This local photo is protected after a cloud-only deletion.": "This local photo is protected after a cloud-only deletion.",
+  "Remove protection without deleting": "Remove protection without deleting"
 }

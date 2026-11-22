@@ -253,5 +253,16 @@
   "Album status": "アルバムの状態",
   "Paste": "ペースト",
   "Shared albums may require permission to add photos.": "共有アルバムに写真を追加するには権限が必要な場合があります。",
-  "Choose photos, an album destination, and view progress": "写真と保存先アルバムを選び、進行状況を確認"
+  "Choose photos, an album destination, and view progress": "写真と保存先アルバムを選び、進行状況を確認",
+  "Choose where to delete": "削除する場所を選択",
+  "Delete only from Google Photos": "Google フォトからのみ削除",
+  "Use normal deletion (may delete device copy)": "通常の削除（端末のコピーも削除される場合があります）",
+  "Experimental: keep these photos on this iPhone. New uploads of these local assets are blocked. GoToHP backup integration must be enabled. Finish all uploads first. Other devices are not protected.": "試験機能：この iPhone 上の写真を保持し、同じローカル写真の再アップロードをブロックします。GoToHP のバックアップ連携が必要です。先にすべてのアップロードを完了してください。他の端末は保護されません。",
+  "The signed-in account changed. Nothing was deleted.": "ログイン中のアカウントが変わりました。何も削除していません。",
+  "Could not save local photo protection. Nothing was deleted.": "ローカル写真の保護設定を保存できません。何も削除していません。",
+  "The deletion result is unknown. Check Google Photos before retrying.": "削除結果が不明です。再試行する前に Google フォトを確認してください。",
+  "Could not confirm the deletion context. Nothing was deleted.": "削除の状況を確認できません。何も削除していません。",
+  "Wait for all GoToHP uploads to finish before deleting only from Google Photos.": "Google フォトからのみ削除する前に、GoToHP のアップロードをすべて完了してください。",
+  "This local photo is protected after a cloud-only deletion.": "クラウドのみから削除したため、このローカル写真は保護されています。",
+  "Remove protection without deleting": "削除せずに保護を解除"
 }

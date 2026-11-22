@@ -253,5 +253,16 @@
   "Album status": "Trạng thái album",
   "Paste": "Dán",
   "Shared albums may require permission to add photos.": "Album được chia sẻ có thể yêu cầu quyền thêm ảnh.",
-  "Choose photos, an album destination, and view progress": "Chọn ảnh, album đích và xem tiến trình"
+  "Choose photos, an album destination, and view progress": "Chọn ảnh, album đích và xem tiến trình",
+  "Choose where to delete": "Chọn nơi xóa ảnh",
+  "Delete only from Google Photos": "Chỉ xóa trên Google Photos",
+  "Use normal deletion (may delete device copy)": "Xóa theo mặc định (có thể xóa bản trên máy)",
+  "Experimental: keep these photos on this iPhone. New uploads of these local assets are blocked. GoToHP backup integration must be enabled. Finish all uploads first. Other devices are not protected.": "Thử nghiệm: giữ các ảnh này trên iPhone này và chặn tải lại từ các ảnh local đó. Cần bật tích hợp sao lưu GoToHP. Hãy hoàn tất mọi tác vụ tải lên trước. Các thiết bị khác không được bảo vệ.",
+  "The signed-in account changed. Nothing was deleted.": "Tài khoản đăng nhập đã thay đổi. Chưa xóa ảnh nào.",
+  "Could not save local photo protection. Nothing was deleted.": "Không lưu được bảo vệ ảnh local. Chưa xóa ảnh nào.",
+  "The deletion result is unknown. Check Google Photos before retrying.": "Chưa xác định được kết quả xóa. Kiểm tra Google Photos trước khi thử lại.",
+  "Could not confirm the deletion context. Nothing was deleted.": "Không xác nhận được ngữ cảnh xóa. Chưa xóa ảnh nào.",
+  "Wait for all GoToHP uploads to finish before deleting only from Google Photos.": "Hãy chờ mọi tác vụ tải lên GoToHP hoàn tất trước khi chỉ xóa trên Google Photos.",
+  "This local photo is protected after a cloud-only deletion.": "Ảnh local này được bảo vệ sau khi chỉ xóa bản trên cloud.",
+  "Remove protection without deleting": "Bỏ bảo vệ, không xóa ảnh"
 }

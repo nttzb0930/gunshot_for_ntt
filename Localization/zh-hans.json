@@ -253,5 +253,16 @@
   "Album status": "相册状态",
   "Paste": "粘贴",
   "Shared albums may require permission to add photos.": "共享相册可能需要添加照片的权限。",
-  "Choose photos, an album destination, and view progress": "选择照片和目标相册，查看进度"
+  "Choose photos, an album destination, and view progress": "选择照片和目标相册，查看进度",
+  "Choose where to delete": "选择删除位置",
+  "Delete only from Google Photos": "仅从 Google 相册删除",
+  "Use normal deletion (may delete device copy)": "正常删除（可能删除设备副本）",
+  "Experimental: keep these photos on this iPhone. New uploads of these local assets are blocked. GoToHP backup integration must be enabled. Finish all uploads first. Other devices are not protected.": "实验功能：保留此 iPhone 上的照片并阻止重新上传这些本地照片。需要启用 GoToHP 备份集成。请先完成所有上传。其他设备不受保护。",
+  "The signed-in account changed. Nothing was deleted.": "登录账号已更改。未删除任何内容。",
+  "Could not save local photo protection. Nothing was deleted.": "无法保存本地照片保护。未删除任何内容。",
+  "The deletion result is unknown. Check Google Photos before retrying.": "删除结果未知。请先检查 Google 相册再重试。",
+  "Could not confirm the deletion context. Nothing was deleted.": "无法确认删除上下文。未删除任何内容。",
+  "Wait for all GoToHP uploads to finish before deleting only from Google Photos.": "仅从 Google 相册删除之前，请等待所有 GoToHP 上传完成。",
+  "This local photo is protected after a cloud-only deletion.": "仅删除云端副本后，此本地照片受到保护。",
+  "Remove protection without deleting": "解除保护，不删除照片"
 }

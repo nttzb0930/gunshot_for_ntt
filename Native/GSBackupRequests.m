@@ -3,6 +3,7 @@
 #import "GSBackupRequests.h"
 #import "GSNativeRouting.h"
 #import "GSNativeAccount.h"
+#import "GSLocalPhotoProtection.h"
 #import "../Media/GSExporter.h"
 #import "GSUploadMonitor.h"
 #import "../Shared/IPCProtocol.h"
@@ -17,6 +18,7 @@
 @property (atomic) BOOL cancelGo;
 @property (atomic) BOOL reconciling;
 @property (atomic) BOOL finished;
+@property (atomic) BOOL countedActive;
 @property (atomic) double progress;
 @property (atomic, copy) NSString *jobID;
 @property (nonatomic, copy) NSString *account;
@@ -32,6 +34,7 @@ static NSObject *GSLock;
 static NSMutableDictionary *GSCounts;
 // Each overlapping request owns one registration, even for the same asset.
 static NSCountedSet *GSReconciling;
+static NSUInteger GSActiveTransfers;
 static void GSCount(NSString *key) {
     @synchronized(GSLock) {
         GSCounts[key] = @([GSCounts[key] unsignedIntegerValue] + 1);
@@ -47,6 +50,7 @@ NSDictionary *GSBackupRequestsSnapshot(void) {
         NSMutableDictionary *d = [GSCounts mutableCopy];
         d[@"available"] = @YES;
         d[@"enabled"] = GSNativeRoutingEnabled() ? @YES : @NO;
+        d[@"activeTransfers"] = @(GSActiveTransfers);
         return d;
     }
 }
@@ -98,8 +102,8 @@ static BOOL GSCanPrepare(NSDictionary *options) {
 #endif
 }
 static BOOL GSStillAuthorized(GSBackupTransfer *transfer) {
-    return !transfer.cancelled && GSNativeRoutingEnabled() &&
-           [GSNativeRoutingAccount() isEqual:transfer.account] &&
+    return !transfer.cancelled && ![GSLocalPhotoProtectionStore() contains:transfer.localID] &&
+           GSNativeRoutingEnabled() && [GSNativeRoutingAccount() isEqual:transfer.account] &&
            GSNativeIdentityMatches(transfer.identityIdentifier);
 }
 static void GSReportProgress(id request, GSBackupTransfer *transfer, NSDictionary *state) {
@@ -128,6 +132,13 @@ static void GSReportProgress(id request, GSBackupTransfer *transfer, NSDictionar
     });
 }
 static void GSStart(id request, SEL selector, IMP original) {
+    id protectedAsset = GSPhotosGetObject(request, @"asset");
+    if ([protectedAsset isKindOfClass:PHAsset.class] &&
+        [GSLocalPhotoProtectionStore() contains:((PHAsset *)protectedAsset).localIdentifier]) {
+        GSCount(@"cloudDeletedAssetBlocked");
+        GSFail(request, 6);
+        return;
+    }
     GSBackupTransfer *existing = objc_getAssociatedObject(request, &GSTransferKey);
     if (existing) {
         if (existing.reconciling)
@@ -154,6 +165,10 @@ static void GSStart(id request, SEL selector, IMP original) {
         return;
     }
     GSBackupTransfer *transfer = [GSBackupTransfer new];
+    @synchronized(GSLock) {
+        transfer.countedActive = YES;
+        GSActiveTransfers++;
+    }
     transfer.localID = asset.localIdentifier;
     objc_setAssociatedObject(request, &GSTransferKey, transfer, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
     GSCount(@"intercepted");
@@ -279,6 +294,11 @@ static void GSFinish(id request, BOOL success) {
         if (!t || t.finished)
             return;
         t.finished = YES;
+        if (t.countedActive) {
+            t.countedActive = NO;
+            if (GSActiveTransfers)
+                GSActiveTransfers--;
+        }
         if (success)
             t.progress = 1;
         if (t.reconciling && !t.cancelled)
@@ -352,6 +372,11 @@ static void GSBindStart(Class c) {
                   GSBackupTransfer *t = objc_getAssociatedObject(request, &GSTransferKey);
                   t.cancelGo = GSUploadHostForeground();
                   @synchronized(GSLock) {
+                      if (t.countedActive) {
+                          t.countedActive = NO;
+                          if (GSActiveTransfers)
+                              GSActiveTransfers--;
+                      }
                       if (t.reconciling && !t.finished && !t.cancelled)
                           [GSReconciling removeObject:t.localID];
                       t.cancelled = YES;

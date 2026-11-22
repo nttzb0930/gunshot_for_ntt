@@ -60,3 +60,41 @@ Gunshot は Google フォト内部のアップロード要求クラス（`GMUAss
 1. 「GoToHP の設定」内の **「Upload diagnostics（診断）」** を ON にします。
 2. 写真のバックアップを行い、**「Export diagnostics」** をタップして診断情報を書き出します。
 3. `backupRouting` 項目内の `intercepted`（傍受数）、`queued`（キュー追加数）、`nativeReconciled`（同期完了数）などの数値が増加していれば、正常に機能しています。
+
+---
+
+## Experimental cloud-only deletion (Google Photos 7.20.2)
+
+An additional choice is presented when the supported native deletion command is
+executed: **Delete only from Google Photos**, **Use normal deletion**, or **Cancel**.
+The cloud-only choice requires GoToHP backup integration, resolved backed-up items
+and local PhotoKit identities. Unsupported selections disable the cloud-only
+choice; they never silently select it. Finish imports and uploads before using it.
+
+Cloud-only deletion persists the selected local identities before the original
+Google deletion executes. The local-delete branch receives an empty selection;
+the cloud command keeps its original media selection and native promise handling.
+A PhotoKit guard also excludes protected assets from later deletion requests in
+this Google Photos process. New native GoToHP backup requests and asset exports
+reject protected identities. Protection persists across app launches.
+
+For protected items, **Remove protection without deleting** allows future uploads
+without sending a deletion command. Choosing normal deletion explicitly removes
+protection for the resolved selection, then uses the native deletion behavior.
+Do not uninstall the tweak or clear the app's data while relying on protection.
+Other devices, Apple Photos/iCloud operations and other apps are outside its scope.
+File imports, separate copies with new local IDs and explicit retries of previously
+exported jobs are not content-based exclusions and may upload the photo again.
+
+The upload diagnostics JSON includes `cloudOnlyDeletion`: availability/reason,
+store health, protected count, unresolved selections and blocked local deletions.
+The existing backup report counts `cloudDeletedAssetBlocked`. Neither section
+includes local identities, photo contents or credentials.
+
+This is an experimental implementation based on static IPA inspection. Native
+synthetic fixtures cover cancellation, promise forwarding, restoration after a
+protection write, simulated deletion sync, queue/account guards, normal deletion
+and unsupported contracts. They require macOS; real-device acceptance remains
+necessary. Use disposable test photos with another copy, then check Apple Photos
+and Google Photos after reopening/syncing and restarting the device. A successful
+build or mock test does not establish that all private synchronization paths work.

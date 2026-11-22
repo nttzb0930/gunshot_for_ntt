@@ -18,6 +18,7 @@
 #import "../Native/GSUploadDiagnostics.h"
 #import "../Native/GSUnlimitedStorage.h"
 #import "../Native/GSBackupRequests.h"
+#import "../Native/GSCloudOnlyDeletion.h"
 #import "../Native/GSPhotosIntegration.h"
 #import "../Native/GSUploadMonitor.h"
 #import "../Shared/IPCProtocol.h"
@@ -1251,6 +1252,7 @@ static char GSPanelPresentationKey;
     snapshot[@"bottomBarGlass"] = GSPhotosGlassSnapshot();
     snapshot[@"accountConnection"] = GSAccountConnectionSnapshot();
     snapshot[@"backupRouting"] = GSBackupRequestsSnapshot();
+    snapshot[@"cloudOnlyDeletion"] = GSCloudOnlyDeletionSnapshot();
     snapshot[@"photosIntegration"] = GSPhotosIntegrationSnapshot();
     snapshot[@"completionMonitor"] = GSUploadMonitorSnapshot();
 #if !GS_JAILED

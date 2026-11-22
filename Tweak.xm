@@ -5,6 +5,7 @@
 #import "Native/GSNativeRelay.h"
 #import "Native/GSAccountConnection.h"
 #import "Native/GSUploadMonitor.h"
+#import "Native/GSCloudOnlyDeletion.h"
 
 %hook UIWindow
 - (void)becomeKeyWindow {
@@ -33,6 +34,7 @@
             return;
         GSStartAccountConnection();
         GSStartBackupIntegration();
+        GSInstallCloudOnlyDeletion();
         [NSTimer scheduledTimerWithTimeInterval:60 repeats:YES block:^(NSTimer *timer) {
             GSRefreshDaemonAccount();
         }];
