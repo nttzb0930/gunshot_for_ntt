@@ -19,6 +19,7 @@ func Initialize(root string) (*Engine, error) {
 	if err = backend.LoadConfig(filepath.Join(root, "credentials.json")); err != nil {
 		return nil, err
 	}
+	e.albums = remoteAlbums{}
 	return e, nil
 }
 func accountExists(email string) bool {
@@ -42,6 +43,9 @@ func (e *Engine) accounts(r Request) (any, error) {
 			}
 		}
 		err := g.AddNativeAccount(r.Account, r.NativeID)
+		if err == nil {
+			e.clearAlbumCatalog(r.Account)
+		}
 		if err != nil && e.nativeRelay != nil {
 			e.nativeRelay.clear()
 		}
@@ -67,16 +71,27 @@ func (e *Engine) accounts(r Request) (any, error) {
 		} else {
 			_, err = g.AddGoogleAccountWithProxy(r.Secret, "")
 		}
+		if err == nil {
+			e.clearAlbumCatalog("")
+		}
 		return nil, err
 	case "account_select":
 		return nil, g.SelectAccount(r.Account)
 	case "account_remove":
+		for _, task := range e.state.AlbumTasks {
+			if e.state.AlbumTargets[task.TargetID].Account == r.Account && task.State != "completed" && task.State != "superseded" {
+				return nil, errors.New("resolve album tasks or keep the account configured")
+			}
+		}
 		for _, j := range e.state.Jobs {
 			if j.Account == r.Account && j.State != "completed" && j.State != "cancelled" {
 				return nil, errors.New("cancel account jobs first")
 			}
 		}
 		err := g.RemoveCredentials(r.Account)
+		if err == nil {
+			e.clearAlbumCatalog(r.Account)
+		}
 		if err == nil && e.nativeRelay != nil {
 			e.nativeRelay.clear()
 		}
@@ -130,6 +145,7 @@ func upload(ctx context.Context, paths []string, account, quality string, cb fun
 			primaryKey = key
 		}
 		completed += info.Size()
+		cb(Progress{State: "committing", Uploaded: completed, MediaKey: key})
 	}
 	return primaryKey, nil
 }

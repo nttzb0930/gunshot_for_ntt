@@ -92,9 +92,13 @@ func TestRAWJPEGUploadsBothAsIndependentPhotos(t *testing.T) {
 					}
 				}
 				var last Progress
+				var mediaKeys []string
 				sawRAWOffset := false
 				key, err := upload(context.Background(), paths, "a@example.com", quality, func(p Progress) {
 					last = p
+					if p.MediaKey != "" {
+						mediaKeys = append(mediaKeys, p.MediaKey)
+					}
 					if p.State == "uploading" && p.Uploaded == 11 {
 						sawRAWOffset = true
 					}
@@ -105,6 +109,9 @@ func TestRAWJPEGUploadsBothAsIndependentPhotos(t *testing.T) {
 					}
 				} else if err != nil || key != "preview.JPG-key" {
 					t.Fatalf("both uploads did not complete: key=%q err=%v", key, err)
+				}
+				if !failRAW && strings.Join(mediaKeys, ",") != "preview.JPG-key,original.DNG-key" {
+					t.Fatal("album assignment lost one RAW+JPEG media key", mediaKeys)
 				}
 				mu.Lock()
 				defer mu.Unlock()

@@ -11,3 +11,5 @@ FOUNDATION_EXPORT void GSPresent(UIViewController *host);
 FOUNDATION_EXPORT void GSInstallButton(UIWindow *window);
 @interface GSUploadActivity : UIActivity
 @end
+
+FOUNDATION_EXPORT UIBarButtonItem *GSPanelDoneButton(UIViewController *controller);

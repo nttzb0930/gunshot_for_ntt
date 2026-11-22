@@ -12,6 +12,12 @@ import (
 )
 
 type Engine struct {
+	catalogLister          AlbumLister
+	catalogs               map[string]*albumCatalog
+	albums                 AlbumBackend
+	albumImports           map[string]albumImportLease
+	albumCancel            context.CancelFunc
+	albumActiveAccount     string
 	nativeRelay            *nativeRelay
 	importHashes           map[string][]hash.Hash
 	mu                     sync.Mutex
@@ -48,6 +54,9 @@ func Open(root string, runner Runner) (*Engine, error) {
 		return nil, err
 	}
 	en := &Engine{root: root, state: s, jobsByID: make(map[string]*Job, len(s.Jobs)), active: map[string]context.CancelFunc{}, importHashes: map[string][]hash.Hash{}, runner: runner}
+	if err := en.restoreAlbums(); err != nil {
+		return nil, err
+	}
 	for _, j := range s.Jobs {
 		en.jobsByID[j.ID] = j
 		switch j.State {
@@ -77,6 +86,14 @@ func (e *Engine) find(id string) *Job     { return e.jobsByID[id] }
 func (e *Engine) Close() {
 	e.mu.Lock()
 	e.stopped = true
+	for _, c := range e.catalogs {
+		if c.cancel != nil {
+			c.cancel()
+		}
+	}
+	if e.albumCancel != nil {
+		e.albumCancel()
+	}
 	for _, c := range e.active {
 		c()
 	}

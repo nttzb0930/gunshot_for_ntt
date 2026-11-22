@@ -31,6 +31,8 @@ func (o Options) valid() bool {
 func validQuality(q string) bool { return q == "original" || q == "saver" || q == "quota" }
 
 type Job struct {
+	MediaKeys       []string   `json:"mediaKeys,omitempty"`
+	AlbumTargets    []string   `json:"albumTargets,omitempty"`
 	OriginalPolicy  int        `json:"originalPolicy,omitempty"` // 1: original bytes sent without legacy remote-hash shortcut.
 	ID              string     `json:"id"`
 	Account         string     `json:"account"`
@@ -50,30 +52,36 @@ type Job struct {
 	Owner           string     `json:"owner"`
 }
 type State struct {
-	CompletionRevision uint64  `json:"completionRevision,omitempty"`
-	Version            int     `json:"version"`
-	Options            Options `json:"options"`
-	Jobs               []*Job  `json:"jobs"`
+	AlbumConfigs       map[string]*AlbumConfig `json:"albumConfigs,omitempty"`
+	AlbumTargets       map[string]*AlbumTarget `json:"albumTargets,omitempty"`
+	AlbumTasks         []*AlbumTask            `json:"albumTasks,omitempty"`
+	CompletionRevision uint64                  `json:"completionRevision,omitempty"`
+	Version            int                     `json:"version"`
+	Options            Options                 `json:"options"`
+	Jobs               []*Job                  `json:"jobs"`
 }
 type Request struct {
-	NativeID  string     `json:"nativeID,omitempty"`
-	Op        string     `json:"op"`
-	ID        string     `json:"id,omitempty"`
-	Account   string     `json:"account,omitempty"`
-	Secret    string     `json:"secret,omitempty"`
-	Quality   string     `json:"quality,omitempty"`
-	Resources []Resource `json:"resources,omitempty"`
-	Index     int        `json:"index,omitempty"`
-	Offset    int64      `json:"offset,omitempty"`
-	Data      []byte     `json:"data,omitempty"`
-	Timestamp int64      `json:"timestamp,omitempty"`
-	Options   *Options   `json:"options,omitempty"`
-	Cursor    int        `json:"cursor,omitempty"`
-	Online    bool       `json:"online,omitempty"`
-	WiFi      bool       `json:"wifi,omitempty"`
-	Charging  bool       `json:"charging,omitempty"`
+	Album     *AlbumSettings `json:"album,omitempty"`
+	Confirm   bool           `json:"confirm,omitempty"`
+	NativeID  string         `json:"nativeID,omitempty"`
+	Op        string         `json:"op"`
+	ID        string         `json:"id,omitempty"`
+	Account   string         `json:"account,omitempty"`
+	Secret    string         `json:"secret,omitempty"`
+	Quality   string         `json:"quality,omitempty"`
+	Resources []Resource     `json:"resources,omitempty"`
+	Index     int            `json:"index,omitempty"`
+	Offset    int64          `json:"offset,omitempty"`
+	Data      []byte         `json:"data,omitempty"`
+	Timestamp int64          `json:"timestamp,omitempty"`
+	Options   *Options       `json:"options,omitempty"`
+	Cursor    int            `json:"cursor,omitempty"`
+	Online    bool           `json:"online,omitempty"`
+	WiFi      bool           `json:"wifi,omitempty"`
+	Charging  bool           `json:"charging,omitempty"`
 }
 type Progress struct {
+	MediaKey        string
 	State           string
 	Uploaded, Total int64
 }

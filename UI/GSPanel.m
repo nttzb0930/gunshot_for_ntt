@@ -5,6 +5,8 @@
 #import "../Media/GSExporter.h"
 #import "../Media/GSBatchImport.h"
 #import "GSAlbumPicker.h"
+#import "GSAlbumStatus.h"
+#import "GSCloudAlbumPicker.h"
 #import "../Native/GSNativeAccount.h"
 #import "../Native/GSAccountConnection.h"
 #if !GS_JAILED
@@ -22,6 +24,8 @@
 #import <PhotosUI/PhotosUI.h>
 #import <objc/runtime.h>
 #define GS_BACKUP_TITLE GSL(@"Route manual and automatic backups through GoToHP")
+static char GSPanelPresentationKey;
+
 #define GS_ACCOUNT_HELP GSL(@"Connect or refresh your account.")
 #if GS_JAILED
 #define GS_BACKUP_HELP                                                                             \
@@ -46,10 +50,19 @@
 @interface GSPanel () <PHPickerViewControllerDelegate>
 @property (nonatomic, strong) NSArray *jobs;
 @property (nonatomic, strong) NSDictionary *accounts;
+@property (nonatomic, strong) NSDictionary *albumSnapshot;
+@property (nonatomic, copy) NSString *albumAccount;
+@property (nonatomic) BOOL albumSnapshotStale;
+@property (nonatomic, copy) NSDictionary *pendingOptions;
+@property (nonatomic, copy) NSDictionary *confirmedOptions;
+@property (nonatomic) BOOL configuringOptions;
+@property (nonatomic) BOOL displayRefreshScheduled;
+@property (nonatomic) NSTimeInterval switchAnimationUntil;
 @property (nonatomic, strong) NSMutableDictionary *options;
 @property (nonatomic, strong) NSTimer *timer;
 @property (nonatomic) BOOL busy;
 @property (nonatomic) BOOL refreshing;
+@property (nonatomic) BOOL exportingDiagnostics;
 @property (nonatomic) NSUInteger stateGeneration;
 @property (nonatomic) BOOL nativeAuthorizationFailed;
 @property (nonatomic, strong) NSArray *sharedItems;
@@ -70,39 +83,11 @@
     self.jobs = @[];
     self.statusText = GSL(@"Checking the connection…");
     self.statusLanguage = GSLanguage();
-    self.navigationItem.leftBarButtonItem =
-        [[UIBarButtonItem alloc] initWithTitle:GSL(@"Done")
-                                         style:UIBarButtonItemStylePlain
-                                        target:self
-                                        action:@selector(close)];
-    self.navigationItem.rightBarButtonItem =
-        [[UIBarButtonItem alloc] initWithTitle:self.settingsMode ? GSL(@"Reconnect") : GSL(@"Add")
-                                         style:UIBarButtonItemStylePlain
-                                        target:self
-                                        action:@selector(primary)];
-#if GS_JAILED
-    self.navigationItem.prompt = nil;
-#endif
-    if (self.settingsMode && GSIsGooglePhotos()) {
-        UIBarButtonItem *upload =
-            [[UIBarButtonItem alloc] initWithTitle:GSL(@"Uploads")
-                                             style:UIBarButtonItemStylePlain
-                                            target:self
-                                            action:@selector(openUploadPanel)];
-        self.navigationItem.rightBarButtonItems =
-            @[ self.navigationItem.rightBarButtonItem, upload ];
-    }
-    if (!self.settingsMode && GSIsGooglePhotos()) {
-        UIBarButtonItem *settings =
-            [[UIBarButtonItem alloc] initWithTitle:GSL(@"Settings")
-                                             style:UIBarButtonItemStylePlain
-                                            target:self
-                                            action:@selector(openEmbeddedSettings)];
-        self.navigationItem.rightBarButtonItems =
-            @[ self.navigationItem.rightBarButtonItem, settings ];
-    }
+    [self updateNavigationLabels];
     self.tableView.rowHeight = UITableViewAutomaticDimension;
     self.tableView.estimatedRowHeight = 72;
+    if (self.settingsMode)
+        self.tableView.tableHeaderView = [[UIView alloc] initWithFrame:CGRectMake(0, 0, 1, 1)];
     self.tableView.backgroundColor = UIColor.systemGroupedBackgroundColor;
     self.tableView.tintColor = [UIColor colorWithRed:0.10 green:0.45 blue:0.91 alpha:1];
     self.navigationController.navigationBar.tintColor = self.tableView.tintColor;
@@ -111,15 +96,131 @@
 - (void)viewWillAppear:(BOOL)animated {
     [super viewWillAppear:animated];
     [self updateNavigationLabels];
+    self.albumSnapshotStale = YES;
+    self.stateGeneration++;
     [self reloadTablePreservingPosition];
+    [self refresh];
 }
 - (void)updateNavigationLabels {
-    self.navigationItem.leftBarButtonItem.title = GSL(@"Done");
-    self.navigationItem.rightBarButtonItem.title =
-        self.settingsMode ? GSL(@"Reconnect") : GSL(@"Add");
-    if (self.navigationItem.rightBarButtonItems.count > 1)
-        self.navigationItem.rightBarButtonItems[1].title =
-            self.settingsMode ? GSL(@"Uploads") : GSL(@"Settings");
+    BOOL root = self.navigationController.viewControllers.firstObject == self;
+    self.title = root ? @"GoToHP" : (self.settingsMode ? GSL(@"Settings") : GSL(@"Uploads"));
+    // UIKit supplies Back only when this page has a predecessor.
+    self.navigationItem.leftBarButtonItem = nil;
+    self.navigationItem.hidesBackButton = root;
+    self.navigationItem.backButtonDisplayMode = UINavigationItemBackButtonDisplayModeMinimal;
+    self.navigationItem.rightBarButtonItems = nil;
+    self.navigationItem.rightBarButtonItem = GSPanelDoneButton(self);
+}
+- (void)saveAlbumDestination:(NSDictionary *)settings account:(NSString *)account {
+    if (self.busy || ![self.accounts[@"selected"] isEqual:account])
+        return;
+    self.albumSnapshotStale = YES;
+    [self request:@{@"op" : @"album_configure", @"account" : account, @"album" : settings}];
+}
+- (void)chooseAlbumDestination {
+    NSString *account = self.accounts[@"selected"];
+    if (!account.length) {
+        [self message:GSL(@"Connect an account to continue")];
+        return;
+    }
+    if (!self.albumSnapshot) {
+        [self message:GSL(@"Album status is unavailable. Tap to view details.")];
+        return;
+    }
+    NSDictionary *settings = self.albumSnapshot[@"settings"];
+    UIAlertController *sheet = [UIAlertController
+        alertControllerWithTitle:GSL(@"Album destination")
+                         message:
+                             GSL(@"New destinations apply to newly queued media. Disabling album "
+                                 @"assignment pauses pending album tasks; uploads continue.")
+                  preferredStyle:UIAlertControllerStyleActionSheet];
+    __weak GSPanel *weakSelf = self;
+    [sheet addAction:[UIAlertAction
+                         actionWithTitle:GSL(@"Do not add to an album")
+                                   style:UIAlertActionStyleDefault
+                                 handler:^(UIAlertAction *action) {
+                                     NSMutableDictionary *disabled = [settings mutableCopy];
+                                     disabled[@"enabled"] = @NO;
+                                     [weakSelf saveAlbumDestination:disabled account:account];
+                                 }]];
+    [sheet addAction:[UIAlertAction
+                         actionWithTitle:GSL(@"Existing Album")
+                                   style:UIAlertActionStyleDefault
+                                 handler:^(UIAlertAction *action) {
+                                     GSPanel *panel = weakSelf;
+                                     if (!panel)
+                                         return;
+                                     NSString *selectedKey = settings[@"albumKey"];
+                                     if (!selectedKey.length)
+                                         selectedKey =
+                                             panel.albumSnapshot[@"resolvedAlbumKey"] ?: @"";
+                                     GSCloudAlbumPicker *picker = [[GSCloudAlbumPicker alloc]
+                                         initWithAccount:account
+                                              selectedID:selectedKey
+                                               selection:^(NSString *key, NSString *name) {
+                                                   [weakSelf saveAlbumDestination:@{
+                                                       @"enabled" : @YES,
+                                                       @"mode" : @"existing",
+                                                       @"albumKey" : key,
+                                                       @"name" : name ?: @""
+                                                   }
+                                                                          account:account];
+                                               }];
+                                     [panel.navigationController pushViewController:picker
+                                                                           animated:YES];
+                                 }]];
+    [sheet addAction:[UIAlertAction actionWithTitle:GSL(@"Create New Album")
+                                              style:UIAlertActionStyleDefault
+                                            handler:^(UIAlertAction *action) {
+                                                [weakSelf createAlbumDestinationForAccount:account];
+                                            }]];
+    [sheet addAction:[UIAlertAction actionWithTitle:GSL(@"Cancel")
+                                              style:UIAlertActionStyleCancel
+                                            handler:nil]];
+    [self sheet:sheet];
+}
+- (void)createAlbumDestinationForAccount:(NSString *)account {
+    UIAlertController *alert =
+        [UIAlertController alertControllerWithTitle:GSL(@"Create New Album")
+                                            message:GSL(@"Will be created after uploads finish.")
+                                     preferredStyle:UIAlertControllerStyleAlert];
+    [alert addTextFieldWithConfigurationHandler:^(UITextField *field) {
+        field.placeholder = GSL(@"New album name");
+    }];
+    [alert addAction:[UIAlertAction actionWithTitle:GSL(@"Cancel")
+                                              style:UIAlertActionStyleCancel
+                                            handler:nil]];
+    __weak GSPanel *weakSelf = self;
+    __weak UIAlertController *weakAlert = alert;
+    [alert
+        addAction:
+            [UIAlertAction
+                actionWithTitle:GSL(@"Save")
+                          style:UIAlertActionStyleDefault
+                        handler:^(UIAlertAction *save) {
+                            NSString *name =
+                                [weakAlert.textFields.firstObject.text
+                                    stringByTrimmingCharactersInSet:
+                                        NSCharacterSet.whitespaceAndNewlineCharacterSet]
+                                    ?: @"";
+                            NSMutableCharacterSet *invalid =
+                                [NSMutableCharacterSet characterSetWithCharactersInString:@"\n\r"];
+                            [invalid addCharactersInRange:NSMakeRange(0, 1)];
+                            if (!name.length ||
+                                [name lengthOfBytesUsingEncoding:NSUTF8StringEncoding] > 200 ||
+                                [name rangeOfCharacterFromSet:invalid].location != NSNotFound) {
+                                [weakSelf
+                                    message:GSL(@"Enter a short album name without line breaks.")];
+                                return;
+                            }
+                            [weakSelf saveAlbumDestination:@{
+                                @"enabled" : @YES,
+                                @"mode" : @"create",
+                                @"name" : name
+                            }
+                                                   account:account];
+                        }]];
+    [self presentViewController:alert animated:YES completion:nil];
 }
 - (void)chooseLanguage {
     UIAlertController *sheet =
@@ -178,8 +279,9 @@
 }
 - (void)close {
     // Closing the screen does not cancel queued work or wait for authentication.
-    if (self.navigationController.viewControllers.count > 1) {
-        [self.navigationController popViewControllerAnimated:YES];
+    GSPanel *root = (GSPanel *)self.navigationController.viewControllers.firstObject;
+    if (root != self && [root isKindOfClass:GSPanel.class]) {
+        [root close];
         return;
     }
     if (self.activityCompletion)
@@ -188,9 +290,78 @@
         [self dismissViewControllerAnimated:YES completion:nil];
 }
 - (BOOL)isInteractingWithTable {
-    return self.tableView.tracking || self.tableView.dragging || self.tableView.decelerating;
+    return self.tableView.tracking || self.tableView.dragging || self.tableView.decelerating ||
+           NSProcessInfo.processInfo.systemUptime < self.switchAnimationUntil;
+}
+- (BOOL)switchEnabledForControl:(NSInteger)control {
+    if (control == 19)
+        return GSPhotosGlassAvailable();
+    if (control == 16)
+        return GSUnlimitedStorageAvailable();
+    if (self.busy)
+        return NO;
+    if (control == 10)
+        return GSNativeRoutingAvailable();
+    if (control == 11)
+        return GSUploadDiagnosticsAvailable();
+    return self.options != nil;
+}
+- (NSArray *)presentationAtPath:(NSIndexPath *)path {
+    NSString *language = GSLanguage();
+    if (path.section == 0)
+        return @[
+            language, self.accounts[@"selected"] ?: @"", self.statusText ?: @"",
+            self.statusLanguage ?: @"", @(self.busy)
+        ];
+    if (path.section == self.queueSection)
+        return @[ language, path.row < self.jobs.count ? self.jobs[path.row] : @{} ];
+    NSInteger control = [self controlAtPath:path];
+    id state = @"";
+    if ((control >= 3 && control <= 5) || control == 10 || control == 11 || control == 16 ||
+        control == 19) {
+        state = @[
+            @([self switchValueForControl:control]), @([self switchEnabledForControl:control]),
+            control == 19 ? @([GSPhotosGlassSnapshot()[@"restartRequired"] boolValue]) : @NO
+        ];
+    } else if (control >= 0 && control < 3) {
+        state = self.options[@[ @"quality", @"concurrent", @"retries" ][control]] ?: @"";
+    } else if (control == 6)
+        state = self.accounts[@"selected"] ?: @"";
+    else if (control == 13)
+        state = @[ @(self.busy), self.accounts[@"selected"] ?: @"" ];
+    else if (control == 14)
+        state = @[ @(self.busy), @(self.sharedItems.count) ];
+    else if (control == 15)
+        state = GSLanguageOverride();
+    else if (control == 18)
+        state = @([GSBatchImportSnapshot()[@"active"] boolValue]);
+    else if (control == 20)
+        state = @[
+            self.albumSnapshot[@"settings"] ?: @{}, self.albumSnapshot[@"resolvedAlbumKey"] ?: @""
+        ];
+    else if (control == 22)
+        state = @(self.busy);
+    return @[ language, @(control), state ];
 }
 - (void)reloadTablePreservingPosition {
+    // Do not relayout underneath a finger, a switch animation, or a sheet anchor.
+    if ([self isInteractingWithTable] || self.presentedViewController) {
+        if (!self.displayRefreshScheduled) {
+            self.displayRefreshScheduled = YES;
+            __weak GSPanel *weakSelf = self;
+            dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 400 * NSEC_PER_MSEC),
+                           dispatch_get_main_queue(), ^{
+                               GSPanel *panel = weakSelf;
+                               if (!panel)
+                                   return;
+                               panel.displayRefreshScheduled = NO;
+                               if (panel.viewIfLoaded.window &&
+                                   panel.navigationController.topViewController == panel)
+                                   [panel reloadTablePreservingPosition];
+                           });
+        }
+        return;
+    }
     UITableView *table = self.tableView;
     NSIndexPath *anchor = table.indexPathsForVisibleRows.firstObject;
     CGFloat delta =
@@ -201,24 +372,37 @@
         [table reloadData];
         self.tableLanguage = GSLanguage();
     } else {
-        // Reconfigure existing cells so an in-flight UISwitch animation survives status polls.
         NSInteger queue = self.queueSection;
-        if ([table numberOfRowsInSection:queue] != [self tableView:table
-                                                       numberOfRowsInSection:queue])
+        BOOL resized = [table numberOfRowsInSection:queue] != [self tableView:table
+                                                                  numberOfRowsInSection:queue];
+        if (resized)
             [UIView performWithoutAnimation:^{
                 [table reloadSections:[NSIndexSet indexSetWithIndex:queue]
                      withRowAnimation:UITableViewRowAnimationNone];
             }];
         NSMutableArray *paths = [NSMutableArray array];
-        for (NSInteger section = 0; section < table.numberOfSections; section++)
-            for (NSInteger row = 0; row < [table numberOfRowsInSection:section]; row++)
-                [paths addObject:[NSIndexPath indexPathForRow:row inSection:section]];
-        [table reconfigureRowsAtIndexPaths:paths];
+        for (NSIndexPath *path in table.indexPathsForVisibleRows) {
+            if (path.section >= table.numberOfSections ||
+                path.row >= [table numberOfRowsInSection:path.section])
+                continue;
+            UITableViewCell *cell = [table cellForRowAtIndexPath:path];
+            if (!cell)
+                continue;
+            if (![objc_getAssociatedObject(cell, &GSPanelPresentationKey)
+                    isEqual:[self presentationAtPath:path]])
+                [paths addObject:path];
+        }
+        if (!resized && !paths.count)
+            return;
+        if (paths.count)
+            [UIView performWithoutAnimation:^{
+                [table reconfigureRowsAtIndexPaths:paths];
+            }];
         [table headerViewForSection:queue].textLabel.text = [self tableView:table
                                                     titleForHeaderInSection:queue];
     }
     [table layoutIfNeeded];
-    if (anchor && anchor.section < [table numberOfSections] &&
+    if (anchor && anchor.section < table.numberOfSections &&
         anchor.row < [table numberOfRowsInSection:anchor.section])
         offset.y = [table rectForRowAtIndexPath:anchor].origin.y + delta;
     CGFloat minimum = -table.adjustedContentInset.top;
@@ -226,6 +410,22 @@
                                        table.adjustedContentInset.bottom);
     [table setContentOffset:CGPointMake(offset.x, MIN(MAX(offset.y, minimum), maximum))
                    animated:NO];
+}
+- (void)acknowledgeSwitch:(UISwitch *)toggle {
+    // The sender already animates itself. Record it instead of reconfiguring its cell.
+    for (NSIndexPath *path in self.tableView.indexPathsForVisibleRows) {
+        UITableViewCell *cell = [self.tableView cellForRowAtIndexPath:path];
+        if (cell.accessoryView != toggle)
+            continue;
+        if (toggle.tag == 19) {
+            // Its explanatory text can change height; update only this row after the animation.
+            [self reloadTablePreservingPosition];
+            return;
+        }
+        objc_setAssociatedObject(cell, &GSPanelPresentationKey, [self presentationAtPath:path],
+                                 OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+        break;
+    }
 }
 - (void)message:(NSString *)message {
     BOOL changed =
@@ -237,11 +437,14 @@
 }
 - (void)refresh {
     // Presented sheets keep their popover anchor; reloading the table under them can drop the source view (issue #50).
-    if (self.busy || self.refreshing || self.nativeAuthorizationFailed ||
+    if (self.busy || self.configuringOptions || self.refreshing || self.nativeAuthorizationFailed ||
         [self isInteractingWithTable] || self.presentedViewController)
         return;
     self.refreshing = YES;
     NSUInteger generation = self.stateGeneration;
+    NSDictionary *cachedAlbum = self.albumSnapshot;
+    NSString *cachedAlbumAccount = self.albumAccount;
+    BOOL reloadAlbum = self.albumSnapshotStale;
     dispatch_async(dispatch_get_global_queue(QOS_CLASS_UTILITY, 0), ^{
         NSError *error = nil;
         NSDictionary *accounts = GSRequest(@{@"op" : @"accounts"}, &error);
@@ -257,6 +460,13 @@
                 [jobs addObjectsFromArray:page[@"jobs"] ?: @[]];
                 cursor = [page[@"next"] integerValue];
             } while (cursor >= 0);
+        // Album status is optional: a failed album query must not hide upload status.
+        NSString *account = accounts[@"selected"];
+        NSDictionary *album = nil;
+        if (!self.settingsMode && account.length)
+            album = !reloadAlbum && cachedAlbum && [cachedAlbumAccount isEqual:account]
+                        ? cachedAlbum
+                        : GSRequest(@{@"op" : @"album_status", @"account" : account}, nil);
         dispatch_async(dispatch_get_main_queue(), ^{
             self.refreshing = NO;
             // A poll completing during a gesture is superseded by the next idle poll.
@@ -272,9 +482,13 @@
                 return;
             }
             BOOL changed = ![self.accounts isEqual:accounts] || ![self.options isEqual:options] ||
-                           ![self.jobs isEqual:jobs];
+                           ![self.jobs isEqual:jobs] ||
+                           (self.albumSnapshot != album && ![self.albumSnapshot isEqual:album]);
             NSString *previousStatus = self.statusText, *previousLanguage = self.statusLanguage;
             self.accounts = accounts;
+            self.albumSnapshot = album;
+            self.albumAccount = account;
+            self.albumSnapshotStale = album == nil;
             self.options = [options mutableCopy];
             self.jobs = jobs;
             NSString *readiness = GSL(@"Ready to upload");
@@ -327,18 +541,30 @@
     });
 }
 - (NSArray<NSDictionary *> *)controlSections {
-    if (!self.settingsMode)
-        return @[ @{
-            @"title" : GSL(@"Uploads"),
-            @"rows" : @[ @14, @17, @18 ],
-            @"footer" : [GSL(@"For large batches, choose an album. The photo picker is limited to "
-                             @"100 items per selection.\n") stringByAppendingString:GS_QUEUED_HELP]
-        } ];
+    if (!self.settingsMode) {
+        NSMutableArray *sections = [NSMutableArray arrayWithArray:@[
+            @{
+                @"title" : GSL(@"Album"),
+                @"rows" : @[ @20 ],
+                @"footer" : GSL(@"The destination applies to newly queued media. Existing tasks "
+                                @"keep their original album.")
+            },
+            @{
+                @"title" : GSL(@"Choose content"),
+                @"rows" : @[ @14, @17, @18 ],
+                @"footer" :
+                    [GSL(@"For large batches, choose an album. The photo picker is limited to "
+                         @"100 items per selection.\n") stringByAppendingString:GS_QUEUED_HELP]
+            }
+        ]];
+        if (self.navigationController.viewControllers.firstObject == self)
+            [sections addObject:@{@"title" : GSL(@"Settings"), @"rows" : @[ @23 ]}];
+        return sections;
+    }
     NSMutableArray *groups = [NSMutableArray array];
-    NSArray *accountRows = @[ @13, @6, @7 ];
-    if (GSIsGooglePhotos())
-        accountRows = @[ @13 ];
-    [groups addObject:@{@"title" : GSL(@"Account"), @"rows" : accountRows}];
+    if (!GSIsGooglePhotos())
+        [groups addObject:@{@"title" : GSL(@"Account"), @"rows" : @[ @6, @7 ]}];
+    [groups addObject:@{@"title" : GSL(@"Uploads"), @"rows" : @[ @22 ]}];
     [groups addObject:@{
         @"title" : GSL(@"Upload settings"),
         @"rows" : @[ @0, @1, @2, @3, @4, @5 ],
@@ -358,7 +584,8 @@
         [groups addObject:@{
             @"title" : GSL(@"Diagnostics"),
             @"rows" : @[ @11, @12 ],
-            @"footer" : GSL(@"Troubleshoot compatibility. Tokens and media are never recorded.")
+            @"footer" : GSL(@"Export one report for upload and album issues. Tokens and media are "
+                            @"never recorded.")
         }];
     [groups addObject:@{
         @"title" : GSL(@"Appearance"),
@@ -415,6 +642,18 @@
         return nil;
     return self.controlSections[section - 1][@"footer"];
 }
+- (CGFloat)tableView:(UITableView *)tableView heightForHeaderInSection:(NSInteger)section {
+    if (!self.settingsMode)
+        return UITableViewAutomaticDimension;
+    // Keep grouped headings compact while respecting the user's text size.
+    CGFloat lineHeight = [UIFont preferredFontForTextStyle:UIFontTextStyleFootnote].lineHeight;
+    return MAX(section == 0 ? 28 : 36, lineHeight + (section == 0 ? 12 : 20));
+}
+- (CGFloat)tableView:(UITableView *)tableView heightForFooterInSection:(NSInteger)section {
+    if (self.settingsMode && ![self tableView:tableView titleForFooterInSection:section].length)
+        return 8;
+    return UITableViewAutomaticDimension;
+}
 - (BOOL)switchValueForControl:(NSInteger)control {
     if (control == 10)
         return GSNativeRoutingEnabled();
@@ -427,16 +666,17 @@
     return [self.options[@[ @"wifiOnly", @"chargingOnly", @"paused" ][control - 3]] boolValue];
 }
 - (void)controlSwitchChanged:(UISwitch *)toggle {
+    self.switchAnimationUntil = NSProcessInfo.processInfo.systemUptime + 0.35;
     NSInteger control = toggle.tag;
     BOOL desired = toggle.on;
     if (control == 19) {
         GSSetPhotosGlass(desired);
-        [self reloadTablePreservingPosition];
+        [self acknowledgeSwitch:toggle];
         return;
     }
     if (control == 16) {
         GSSetUnlimitedStorage(desired);
-        [self reloadTablePreservingPosition];
+        [self acknowledgeSwitch:toggle];
         return;
     }
     if (self.busy) {
@@ -452,7 +692,7 @@
     }
     if (control == 11) {
         GSSetUploadDiagnostics(desired);
-        [self reloadTablePreservingPosition];
+        [self acknowledgeSwitch:toggle];
         return;
     }
     NSMutableDictionary *options = [self.options mutableCopy];
@@ -462,10 +702,15 @@
     }
     options[@[ @"wifiOnly", @"chargingOnly", @"paused" ][control - 3]] = @(desired);
     [self request:@{@"op" : @"configure", @"options" : options}];
+    [self acknowledgeSwitch:toggle];
 }
 - (UITableViewCell *)tableView:(UITableView *)tableView cellForRowAtIndexPath:(NSIndexPath *)path {
-    if (self.settingsMode && path.section == self.queueSection + 1)
-        return [self developerCellForRow:path.row];
+    if (self.settingsMode && path.section == self.queueSection + 1) {
+        UITableViewCell *developer = [self developerCellForRow:path.row];
+        objc_setAssociatedObject(developer, &GSPanelPresentationKey, [self presentationAtPath:path],
+                                 OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+        return developer;
+    }
     NSInteger control = [self controlAtPath:path];
     NSString *identifier = path.section == 0 ? @"status"
                            : control >= 0
@@ -475,6 +720,9 @@
     if (!cell)
         cell = [[UITableViewCell alloc] initWithStyle:UITableViewCellStyleSubtitle
                                       reuseIdentifier:identifier];
+    objc_setAssociatedObject(cell, &GSPanelPresentationKey, [self presentationAtPath:path],
+                             OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+    [[cell.contentView viewWithTag:6020] removeFromSuperview];
     cell.textLabel.textColor = UIColor.labelColor;
     cell.detailTextLabel.text = nil;
     cell.selectionStyle = UITableViewCellSelectionStyleDefault;
@@ -499,7 +747,21 @@
             UIActivityIndicatorView *spinner = [[UIActivityIndicatorView alloc]
                 initWithActivityIndicatorStyle:UIActivityIndicatorViewStyleMedium];
             [spinner startAnimating];
-            cell.accessoryView = spinner;
+            UIView *indicator = [[UIView alloc] initWithFrame:CGRectMake(0, 0, 44, 44)];
+            spinner.center = CGPointMake(22, 22);
+            [indicator addSubview:spinner];
+            cell.accessoryView = indicator;
+        } else {
+            UIButton *refresh = [UIButton buttonWithType:UIButtonTypeSystem];
+            refresh.frame = CGRectMake(0, 0, 44, 44);
+            [refresh setImage:[UIImage systemImageNamed:@"arrow.clockwise"]
+                     forState:UIControlStateNormal];
+            refresh.accessibilityLabel =
+                [self.accounts[@"selected"] length] ? GSL(@"Reconnect") : GSL(@"Connect account");
+            [refresh addTarget:self
+                          action:@selector(refreshAccount:)
+                forControlEvents:UIControlEventTouchUpInside];
+            cell.accessoryView = refresh;
         }
         return cell;
     }
@@ -522,9 +784,13 @@
             GSL(@"Choose photos and videos"),
             GSL(@"Language"),
             GSL(@"Show unlimited storage"),
-            GSL(@"Choose album"),
+            GSL(@"Choose album on this device"),
             GSL(@"Stop preparing"),
-            @"Google Photos · Liquid Glass"
+            @"Google Photos · Liquid Glass",
+            GSL(@"Album destination"),
+            GSL(@"Album status"),
+            GSL(@"Upload photos and videos"),
+            GSL(@"Settings")
         ];
         NSArray *icons = @[
             @"photo",
@@ -546,14 +812,86 @@
             @"cloud",
             @"rectangle.stack",
             @"stop.circle",
-            @"rectangle.bottomhalf.inset.filled"
+            @"rectangle.bottomhalf.inset.filled",
+            @"rectangle.stack.badge.plus",
+            @"waveform.path.ecg",
+            @"square.and.arrow.up",
+            @"gearshape"
         ];
         cell.textLabel.text = titles[control];
         cell.imageView.image = [UIImage systemImageNamed:icons[control]];
         cell.accessoryType = UITableViewCellAccessoryDisclosureIndicator;
+        if (control == 22)
+            cell.detailTextLabel.text =
+                GSL(@"Choose photos, an album destination, and view progress");
+        if (control == 13 || control == 14) {
+            NSString *title =
+                control == 13 ? ([self.accounts[@"selected"] length] ? GSL(@"Reconnect")
+                                                                     : GSL(@"Connect account"))
+                : control == 14 && self.sharedItems.count ? GSL(@"Upload selected items")
+                                                          : titles[control];
+            UIButtonConfiguration *configuration =
+                control == 13 ? [UIButtonConfiguration grayButtonConfiguration]
+                              : [UIButtonConfiguration filledButtonConfiguration];
+            configuration.title = title;
+            configuration.image = [UIImage systemImageNamed:icons[control]];
+            configuration.imagePadding = 10;
+            configuration.cornerStyle = UIButtonConfigurationCornerStyleMedium;
+            configuration.contentInsets = NSDirectionalEdgeInsetsMake(14, 16, 14, 16);
+            __weak GSPanel *weakSelf = self;
+            UIButton *button =
+                [UIButton buttonWithConfiguration:configuration
+                                    primaryAction:[UIAction actionWithHandler:^(UIAction *action) {
+                                        GSPanel *panel = weakSelf;
+                                        if (!panel || panel.busy)
+                                            return;
+                                        panel.sheetSourcePath = path;
+                                        if (control == 13)
+                                            [panel addAccount];
+                                        else
+                                            [panel primary];
+                                    }]];
+            button.tag = 6020;
+            button.enabled = !self.busy;
+            button.titleLabel.adjustsFontForContentSizeCategory = YES;
+            button.titleLabel.numberOfLines = 0;
+            button.translatesAutoresizingMaskIntoConstraints = NO;
+            cell.textLabel.text = nil;
+            cell.imageView.image = nil;
+            cell.accessoryType = UITableViewCellAccessoryNone;
+            cell.selectionStyle = UITableViewCellSelectionStyleNone;
+            [cell.contentView addSubview:button];
+            [NSLayoutConstraint activateConstraints:@[
+                [button.leadingAnchor
+                    constraintEqualToAnchor:cell.contentView.layoutMarginsGuide.leadingAnchor],
+                [button.trailingAnchor
+                    constraintEqualToAnchor:cell.contentView.layoutMarginsGuide.trailingAnchor],
+                [button.topAnchor
+                    constraintEqualToAnchor:cell.contentView.layoutMarginsGuide.topAnchor],
+                [button.bottomAnchor
+                    constraintEqualToAnchor:cell.contentView.layoutMarginsGuide.bottomAnchor],
+                [button.heightAnchor constraintGreaterThanOrEqualToConstant:48]
+            ]];
+            return cell;
+        }
+        if (control == 20) {
+            NSDictionary *settings = self.albumSnapshot[@"settings"];
+            cell.detailTextLabel.text =
+                !self.albumSnapshot ? GSL(@"Album status is unavailable. Try again shortly.")
+                : ![settings[@"enabled"] boolValue]
+                    ? GSL(@"Do not add to an album")
+                    : [NSString stringWithFormat:@"%@ - %@",
+                                                 ([settings[@"mode"] isEqual:@"create"] &&
+                                                  ![self.albumSnapshot[@"resolvedAlbumKey"] length])
+                                                     ? GSL(@"Create New Album")
+                                                     : GSL(@"Existing Album"),
+                                                 [settings[@"name"] length]
+                                                     ? settings[@"name"]
+                                                     : GSL(@"Selected album")];
+        }
         if (control == 17)
             cell.detailTextLabel.text =
-                GSL(@"Upload an entire album; browse folders to choose an album.");
+                GSL(@"Choose an album on this device as the upload source.");
         if (control == 18) {
             BOOL active = [GSBatchImportSnapshot()[@"active"] boolValue];
             cell.textLabel.textColor =
@@ -602,12 +940,7 @@
             toggle.tag = control;
             toggle.accessibilityLabel = titles[control];
             toggle.onTintColor = tableView.tintColor;
-            toggle.enabled = control == 19 ? GSPhotosGlassAvailable()
-                             : control == 16
-                                 ? GSUnlimitedStorageAvailable()
-                                 : !self.busy && (control == 10   ? GSNativeRoutingAvailable()
-                                                  : control == 11 ? GSUploadDiagnosticsAvailable()
-                                                                  : self.options != nil);
+            toggle.enabled = [self switchEnabledForControl:control];
             cell.selectionStyle = UITableViewCellSelectionStyleNone;
         }
         if (control == 19) {
@@ -705,24 +1038,59 @@
                                             handler:nil]];
     [self sheet:sheet];
 }
+- (void)savePendingOptions {
+    NSDictionary *sent = self.pendingOptions;
+    self.pendingOptions = nil;
+    dispatch_async(dispatch_get_global_queue(QOS_CLASS_UTILITY, 0), ^{
+        NSError *error = nil;
+        GSRequest(@{@"op" : @"configure", @"options" : sent}, &error);
+        dispatch_async(dispatch_get_main_queue(), ^{
+            if (!error)
+                self.confirmedOptions = sent;
+            if (self.pendingOptions) {
+                [self savePendingOptions];
+                return;
+            }
+            self.configuringOptions = NO;
+            if (error) {
+                self.options = [self.confirmedOptions mutableCopy];
+                [self message:error.localizedDescription];
+            }
+            self.confirmedOptions = nil;
+            [self reloadTablePreservingPosition];
+            [self refresh];
+        });
+    });
+}
+- (void)configureOptions:(NSDictionary *)options {
+    if (self.busy || !options)
+        return;
+    if (!self.configuringOptions)
+        self.confirmedOptions = [self.options copy];
+    self.stateGeneration++;
+    self.options = [options mutableCopy];
+    self.pendingOptions = [options copy];
+    if (self.configuringOptions)
+        return;
+    self.configuringOptions = YES;
+    [self savePendingOptions];
+}
 - (void)request:(NSDictionary *)request {
+    if ([request[@"op"] isEqual:@"configure"]) {
+        [self configureOptions:request[@"options"]];
+        return;
+    }
     if (self.busy)
         return;
     self.stateGeneration++;
     self.busy = YES;
-    NSMutableDictionary *previousOptions = self.options;
-    if ([request[@"op"] isEqual:@"configure"])
-        self.options = [request[@"options"] mutableCopy];
     [self message:GSL(@"Applying settings…")];
-    self.navigationItem.rightBarButtonItem.enabled = NO;
     dispatch_async(dispatch_get_global_queue(QOS_CLASS_UTILITY, 0), ^{
         NSError *error = nil;
         GSRequest(request, &error);
         dispatch_async(dispatch_get_main_queue(), ^{
             self.busy = NO;
-            self.navigationItem.rightBarButtonItem.enabled = YES;
             if (error) {
-                self.options = previousOptions;
                 [self message:error.localizedDescription];
                 [self reloadTablePreservingPosition];
             } else
@@ -838,6 +1206,12 @@
         });
     });
 }
+- (void)refreshAccount:(UIButton *)sender {
+    if (self.busy || self.presentedViewController)
+        return;
+    self.sheetSourcePath = [NSIndexPath indexPathForRow:0 inSection:0];
+    [self addAccount];
+}
 - (void)addAccount {
     if (GSIsGooglePhotos()) {
         [self connectNativeAccount];
@@ -867,6 +1241,9 @@
     [self sheet:a];
 }
 - (void)exportUploadDiagnostics {
+    if (self.exportingDiagnostics)
+        return;
+    self.exportingDiagnostics = YES;
     NSMutableDictionary *snapshot = [GSUploadDiagnosticsSnapshot() mutableCopy];
     snapshot[@"manualRouting"] = GSNativeRoutingSnapshot();
     snapshot[@"batchImport"] = GSBatchImportSnapshot();
@@ -884,6 +1261,23 @@
     snapshot[@"runtime"] = GSEmbeddedRuntimeSnapshot();
     snapshot[@"sideloadIdentity"] = GSSideloadIdentitySnapshot();
 #endif
+    NSString *account = [self.accounts[@"selected"] copy];
+    dispatch_async(dispatch_get_global_queue(QOS_CLASS_UTILITY, 0), ^{
+        NSDictionary *album =
+            account.length ? GSRequest(@{@"op" : @"album_status", @"account" : account}, nil) : nil;
+        snapshot[@"album"] =
+            album
+                ? @{@"available" : @YES,
+                    @"report" : GSAlbumDiagnosticReport(album)}
+                : @{@"available" : @NO};
+        dispatch_async(dispatch_get_main_queue(), ^{
+            self.exportingDiagnostics = NO;
+            if (self.viewIfLoaded.window && !self.presentedViewController)
+                [self shareUploadDiagnostics:snapshot];
+        });
+    });
+}
+- (void)shareUploadDiagnostics:(NSDictionary *)snapshot {
     NSData *json = [NSJSONSerialization dataWithJSONObject:snapshot
                                                    options:NSJSONWritingPrettyPrinted
                                                      error:nil];
@@ -971,6 +1365,20 @@
     }
     self.sheetSourcePath = path;
     NSInteger control = [self controlAtPath:path];
+    if (control == 22) {
+        [self openUploadPanel];
+        return;
+    }
+    if (control == 23) {
+        [self openEmbeddedSettings];
+        return;
+    }
+    if (control == 20) {
+        if (self.busy)
+            return;
+        [self chooseAlbumDestination];
+        return;
+    }
     if (control == 12) {
         [self exportUploadDiagnostics];
         return;
@@ -989,7 +1397,7 @@
             return;
         }
         if (control == 14) {
-            [self choose];
+            [self primary];
             return;
         }
         if (control == 17) {
@@ -1230,6 +1638,15 @@
 }
 @end
 
+UIBarButtonItem *GSPanelDoneButton(UIViewController *controller) {
+    // All these pages share the GSPanel root; Done closes the whole flow,
+    // while UIKit's Back pops just the current page.
+    return [[UIBarButtonItem alloc]
+        initWithTitle:GSL(@"Done")
+                style:UIBarButtonItemStyleDone
+               target:controller.navigationController.viewControllers.firstObject
+               action:@selector(close)];
+}
 void GSPresent(UIViewController *host) {
     if (!host)
         return;
@@ -1354,7 +1771,7 @@ void GSInstallButton(UIWindow *window) {
         [weak activityDidFinish:YES];
     };
     // Use an explicit button so opening the activity does not upload automatically.
-    panel.navigationItem.prompt = GSL(@"Tap Add to queue your selection.");
+    panel.navigationItem.prompt = GSL(@"Choose the destination, then upload your selection.");
     return [[UINavigationController alloc] initWithRootViewController:panel];
 }
 @end

@@ -1,6 +1,9 @@
 # Shared source list for jailbreak and jailed builds. Paths are repository-relative.
 GUNSHOT_HOST_FILES = \
 	UI/GSPanel.m \
+	UI/GSAlbumManagement.m \
+	UI/GSAlbumStatus.m \
+	UI/GSCloudAlbumPicker.m \
 	UI/GSDeveloperLinks.m \
 	UI/GSPhotosGlass.m \
 	UI/GSPhotosGlassVisibilityGuard.m \

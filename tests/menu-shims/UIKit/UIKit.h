@@ -1,5 +1,5 @@
 #import <Foundation/Foundation.h>
-@class UIWindow;
+@class UIWindow, UIBarButtonItem;
 @interface UIViewController : NSObject
 @end
 @interface UITableViewController : UIViewController

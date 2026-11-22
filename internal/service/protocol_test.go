@@ -8,6 +8,7 @@ import (
 func TestRolePermissions(t *testing.T) {
 	// The public protocol boundary, independent of each operation's payload validation.
 	permissions := map[string]string{
+		"album_catalog":       "photos googlephotos settings",
 		"conditions":          "daemon",
 		"upload_summary":      "photos googlephotos settings",
 		"job":                 "photos googlephotos settings",
