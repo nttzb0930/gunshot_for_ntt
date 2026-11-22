@@ -11,7 +11,7 @@ int main(void) {
         GSLocalPhotoProtection *store = [[GSLocalPhotoProtection alloc] initWithURL:file];
         assert(store.healthy && store.count == 0 && ![store contains:@"a"]);
         NSError *error = nil;
-        assert([store updateIdentifiers:@[ @"a", @"b", @"a" ] protect:YES error:&error]);
+        assert(([store updateIdentifiers:@[ @"a", @"b", @"a" ] protect:YES error:&error]));
         assert(error == nil && store.count == 2 && [store contains:@"a"]);
         store = [[GSLocalPhotoProtection alloc] initWithURL:file];
         assert(store.healthy && store.count == 2 && [store contains:@"b"]);
