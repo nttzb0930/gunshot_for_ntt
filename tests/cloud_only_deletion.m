@@ -182,11 +182,15 @@ NSDictionary *GSRequest(NSDictionary *request, NSError **error) {
 @property (nonatomic, copy) NSString *accountID;
 @property (nonatomic) NSUInteger serverPhotoCount;
 @property (nonatomic, strong) GSFixtureDataSource *dataSource;
-- (id)execute;
+- (id)fixtureExecute;
 - (id)deleteLocalAssets;
 @end
+// Installed dynamically so the ABI rejection fixture can supply a different encoding.
+@interface PHSDeletePhotoCommand (RuntimeExecution)
+- (id)execute;
+@end
 @implementation PHSDeletePhotoCommand
-- (id)execute {
+- (id)fixtureExecute {
     CloudCalls++;
     [self deleteLocalAssets];
     assert(self.mediaItems.count == 1); // Temporary masking must not change the cloud selection.
@@ -241,14 +245,19 @@ static void Choose(NSUInteger index) {
 }
 int main(int argc, char **argv) {
     @autoreleasepool {
-        if (argc > 1 && strcmp(argv[1], "abi"))
+        BOOL incompatibleABI = argc > 1 && !strcmp(argv[1], "abi");
+        if (argc > 1 && !incompatibleABI)
             FixtureVersion = @"8.0.0";
-        if (argc > 1 && !strcmp(argv[1], "abi")) {
-            Method method =
-                class_getInstanceMethod(PHSDeletePhotoCommand.class, @selector(execute));
-            class_replaceMethod(PHSDeletePhotoCommand.class, @selector(execute),
-                                method_getImplementation(method), "v16@0:8");
-        }
+        // class_replaceMethod ignores new type encodings for existing methods.
+        // Add execute for the first time, then verify the actual runtime contract.
+        const char *executionABI = incompatibleABI ? "v16@0:8" : "@16@0:8";
+        IMP execution = method_getImplementation(
+            class_getInstanceMethod(PHSDeletePhotoCommand.class, @selector(fixtureExecute)));
+        BOOL added = class_addMethod(PHSDeletePhotoCommand.class, @selector(execute), execution,
+                                     executionABI);
+        assert(added);
+        Method execute = class_getInstanceMethod(PHSDeletePhotoCommand.class, @selector(execute));
+        assert(!strcmp(method_getTypeEncoding(execute), executionABI));
         Method info =
             class_getInstanceMethod(NSBundle.class, @selector(objectForInfoDictionaryKey:));
         IMP original = method_getImplementation(info);
@@ -276,6 +285,13 @@ int main(int argc, char **argv) {
         assert(GSPhotoKitGuardInstalled);
         if (argc > 1) {
             assert(!GSDeleteInstalled);
+            assert(method_getImplementation(execute) == execution);
+            assert([GSCloudOnlyDeletionSnapshot()[@"availabilityReason"]
+                isEqual:incompatibleABI ? @"private_contract_unavailable"
+                                        : @"requires_photos_7_20_2"]);
+            assert(CloudCalls == 0 && DeletedAssets == nil && FixtureStore.count == 0);
+            NSLog(@"PASS %@ rejection preserves the native command and PhotoKit safeguard",
+                  incompatibleABI ? @"incompatible ABI" : @"unsupported version");
             return 0;
         }
         assert(GSDeleteInstalled);
