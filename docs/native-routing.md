@@ -65,8 +65,14 @@ Gunshot は Google フォト内部のアップロード要求クラス（`GMUAss
 
 ## Experimental cloud-only deletion (Google Photos 7.20.2)
 
-An additional choice is presented when the supported native deletion command is
-executed: **Delete only from Google Photos**, **Use normal deletion**, or **Cancel**.
+An additional choice is presented before the supported native deletion command's
+first destructive phase: **Delete only from Google Photos**, **Use normal deletion**,
+or **Cancel**. In 7.20.2, the trash UI calls `deleteLocalAssets` before enqueueing
+`execute`. Both entry points are intercepted, with separate promises; the choice
+is retained on the same command so queued cloud execution does not ask again.
+The original local promise result and host queue ordering are preserved. A closing
+confirmation is allowed up to two seconds to dismiss; failure rejects the request
+without automatically continuing native deletion.
 The cloud-only choice requires GoToHP backup integration, resolved backed-up items
 and local PhotoKit identities. Unsupported selections disable the cloud-only
 choice; they never silently select it. Finish imports and uploads before using it.
@@ -88,6 +94,10 @@ exported jobs are not content-based exclusions and may upload the photo again.
 
 The upload diagnostics JSON includes `cloudOnlyDeletion`: availability/reason,
 store health, protected count, unresolved selections and blocked local deletions.
+`localPhaseIntercepted` and `executeIntercepted` count first interceptions per
+command phase. `executeHookActive` checks whether the installed method still points
+to the hook. `choicesShown` counts completed presentations, and `lastOutcome`
+reports presentation/account failures without identifying the selected photos.
 The existing backup report counts `cloudDeletedAssetBlocked`. Neither section
 includes local identities, photo contents or credentials.
 

@@ -25,7 +25,7 @@
 @end
 
 static BOOL GSDeleteInstalled, GSPhotoKitGuardInstalled;
-static char GSDeleteChoiceKey, GSDeletePromiseKey;
+static char GSDeleteChoiceKey, GSDeletePromiseKey, GSDeleteLocalPromiseKey, GSDeleteContextKey;
 static id (*GSDeleteExecuteOriginal)(id, SEL);
 static id (*GSDeleteLocalOriginal)(id, SEL);
 static id (*GSDeleteItemsOriginal)(id, SEL);
@@ -33,6 +33,8 @@ static NSString *const GSLocalDeleteScope = @"dev.tqmane.gunshot.emptyLocalDelet
 static void (*GSPhotoKitDeleteOriginal)(id, SEL, id);
 static NSUInteger GSBlockedLocalDeletes;
 static NSUInteger GSUnresolvedSelections;
+static NSUInteger GSDeleteIntercepted, GSLocalPhaseIntercepted, GSDeleteChoicesShown;
+static NSString *GSDeleteLastOutcome = @"not_observed";
 static NSString *GSDeleteAvailability = @"not_installed";
 
 static void GSDeleteReplace(Class cls, SEL selector, IMP replacement) {
@@ -152,6 +154,38 @@ static UIViewController *GSDeletePresenter(void) {
     }
     return nil;
 }
+static void GSDeleteOutcome(NSString *outcome) {
+    @synchronized(GSLocalPhotoProtectionStore()) {
+        GSDeleteLastOutcome = outcome;
+    }
+}
+// Native confirmation dismissal may still be in progress on the next main-queue turn.
+// Wait at most two seconds; failure never falls back to native deletion.
+static void GSDeleteAwaitPresenter(id accountID, GSAuditedDeletePromise *proxy, NSUInteger attempt,
+                                   void (^ready)(UIViewController *)) {
+    if (!accountID || !GSNativeAccountMatches(accountID)) {
+        GSDeleteOutcome(accountID ? @"account_mismatch" : @"missing_account");
+        [proxy reject:GSDeleteError(
+                          GSL(@"Could not confirm the deletion context. Nothing was deleted."))];
+        return;
+    }
+    UIViewController *presenter = GSDeletePresenter();
+    if (presenter) {
+        ready(presenter);
+        return;
+    }
+    if (attempt < 20) {
+        GSDeleteOutcome(@"waiting_for_presenter");
+        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 100 * NSEC_PER_MSEC),
+                       dispatch_get_main_queue(), ^{
+                           GSDeleteAwaitPresenter(accountID, proxy, attempt + 1, ready);
+                       });
+        return;
+    }
+    GSDeleteOutcome(@"presenter_unavailable");
+    [proxy
+        reject:GSDeleteError(GSL(@"Could not confirm the deletion context. Nothing was deleted."))];
+}
 // A file already exported into the Go queue has no reliable PhotoKit identity.
 // Refuse cloud-only deletion until all imports/uploads have settled.
 static BOOL GSDeleteQueueSettled(void) {
@@ -176,8 +210,9 @@ static BOOL GSDeleteQueueSettled(void) {
     }
     return NO;
 }
+static id GSDeleteLocal(id command, SEL selector);
 static void GSDeleteContinue(id command, GSAuditedDeletePromise *proxy, NSArray *identifiers,
-                             BOOL cloudOnly, id accountID) {
+                             BOOL cloudOnly, id accountID, BOOL localPhase) {
     if (cloudOnly && !identifiers.count) {
         [proxy reject:GSDeleteError(
                           GSL(@"Could not confirm the deletion context. Nothing was deleted."))];
@@ -213,7 +248,15 @@ static void GSDeleteContinue(id command, GSAuditedDeletePromise *proxy, NSArray 
     }
     objc_setAssociatedObject(command, &GSDeleteChoiceKey, cloudOnly ? @"cloud" : @"native",
                              OBJC_ASSOCIATION_RETAIN_NONATOMIC);
-    id result = GSDeleteExecuteOriginal(command, NSSelectorFromString(@"execute"));
+    objc_setAssociatedObject(
+        command, &GSDeleteContextKey,
+        @{@"accountID" : accountID,
+          @"localIDs" : identifiers ?: @[]},
+        OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+    // The host calls deleteLocalAssets BEFORE enqueueing execute. Preserve that
+    // local promise and let the host enqueue the cloud command in its own order.
+    id result = localPhase ? GSDeleteLocal(command, NSSelectorFromString(@"deleteLocalAssets"))
+                           : GSDeleteExecuteOriginal(command, NSSelectorFromString(@"execute"));
     if (![result isKindOfClass:NSClassFromString(@"GPCPromise")]) {
         [proxy
             reject:GSDeleteError(GSL(
@@ -236,103 +279,132 @@ static void GSDeleteContinue(id command, GSAuditedDeletePromise *proxy, NSArray 
             return nil;
         }];
 }
-static id GSDeleteExecute(id command, SEL selector) {
-    id pending = objc_getAssociatedObject(command, &GSDeletePromiseKey);
+static id GSDeleteStart(id command, BOOL localPhase) {
+    void *promiseKey = localPhase ? &GSDeleteLocalPromiseKey : &GSDeletePromiseKey;
+    id pending = objc_getAssociatedObject(command, promiseKey);
     if (pending)
         return pending;
+    @synchronized(GSLocalPhotoProtectionStore()) {
+        if (localPhase)
+            GSLocalPhaseIntercepted++;
+        else
+            GSDeleteIntercepted++;
+    }
+    NSString *choice = objc_getAssociatedObject(command, &GSDeleteChoiceKey);
     NSDictionary *targets = GSDeleteTargets(command);
-    if (!targets)
+    if (!targets && !choice)
         @synchronized(GSLocalPhotoProtectionStore()) {
             GSUnresolvedSelections++;
         }
     GSAuditedDeletePromise *proxy = [NSClassFromString(@"GPCPromise") new];
-    objc_setAssociatedObject(command, &GSDeletePromiseKey, proxy,
-                             OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+    objc_setAssociatedObject(command, promiseKey, proxy, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
     dispatch_async(dispatch_get_main_queue(), ^{
         id accountID = GSPhotosGetObject(command, @"accountID");
-        UIViewController *presenter = GSDeletePresenter();
-        if (!presenter || !accountID || !GSNativeAccountMatches(accountID)) {
-            [proxy reject:GSDeleteError(GSL(
-                              @"Could not confirm the deletion context. Nothing was deleted."))];
+        if (!localPhase && choice) {
+            NSDictionary *context = objc_getAssociatedObject(command, &GSDeleteContextKey);
+            BOOL cloudOnly = [choice isEqual:@"cloud"];
+            GSDeleteContinue(command, proxy,
+                             cloudOnly ? context[@"localIDs"] : targets[@"localIDs"], cloudOnly,
+                             context[@"accountID"], NO);
             return;
         }
-        UIAlertController *alert = [UIAlertController
-            alertControllerWithTitle:GSL(@"Choose where to delete")
-                             message:GSL(@"Experimental: keep these photos on this iPhone. New "
+        GSDeleteAwaitPresenter(accountID, proxy, 0, ^(UIViewController *presenter) {
+            UIAlertController *alert = [UIAlertController
+                alertControllerWithTitle:GSL(@"Choose where to delete")
+                                 message:
+                                     GSL(@"Experimental: keep these photos on this iPhone. New "
                                          @"uploads of these local assets are blocked. GoToHP "
                                          @"backup integration must be enabled. Finish all uploads "
                                          @"first. Other devices are not protected.")
-                      preferredStyle:UIAlertControllerStyleAlert];
-        UIAlertAction *cloud = [UIAlertAction
-            actionWithTitle:GSL(@"Delete only from Google Photos")
-                      style:UIAlertActionStyleDestructive
-                    handler:^(UIAlertAction *action) {
-                        dispatch_async(dispatch_get_global_queue(QOS_CLASS_UTILITY, 0), ^{
-                            BOOL settled = GSDeleteQueueSettled();
-                            dispatch_async(dispatch_get_main_queue(), ^{
-                                if (!settled) {
-                                    [proxy
-                                        reject:GSDeleteError(GSL(
-                                                   @"Wait for all GoToHP uploads to finish before "
-                                                   @"deleting only from Google Photos."))];
-                                    return;
-                                }
-                                GSDeleteContinue(command, proxy, targets[@"localIDs"], YES,
-                                                 accountID);
+                          preferredStyle:UIAlertControllerStyleAlert];
+            UIAlertAction *cloud = [UIAlertAction
+                actionWithTitle:GSL(@"Delete only from Google Photos")
+                          style:UIAlertActionStyleDestructive
+                        handler:^(UIAlertAction *action) {
+                            dispatch_async(dispatch_get_global_queue(QOS_CLASS_UTILITY, 0), ^{
+                                BOOL settled = GSDeleteQueueSettled();
+                                dispatch_async(dispatch_get_main_queue(), ^{
+                                    if (!settled) {
+                                        [proxy
+                                            reject:
+                                                GSDeleteError(GSL(
+                                                    @"Wait for all GoToHP uploads to finish before "
+                                                    @"deleting only from Google Photos."))];
+                                        return;
+                                    }
+                                    GSDeleteContinue(command, proxy, targets[@"localIDs"], YES,
+                                                     accountID, localPhase);
+                                });
                             });
-                        });
-                    }];
-        cloud.enabled = [targets[@"allBackedUp"] boolValue] &&
-                        GSLocalPhotoProtectionStore().healthy && GSNativeRoutingEnabled() &&
-                        GSBackupRequestsAvailable();
-        [alert addAction:cloud];
-        [alert addAction:[UIAlertAction
-                             actionWithTitle:GSL(@"Use normal deletion (may delete device copy)")
-                                       style:UIAlertActionStyleDestructive
-                                     handler:^(UIAlertAction *action) {
-                                         GSDeleteContinue(command, proxy, targets[@"localIDs"], NO,
-                                                          accountID);
-                                     }]];
-        BOOL protectedSelection = NO;
-        for (NSString *identifier in targets[@"localIDs"])
-            protectedSelection |= [GSLocalPhotoProtectionStore() contains:identifier];
-        if (protectedSelection)
+                        }];
+            cloud.enabled = [targets[@"allBackedUp"] boolValue] &&
+                            GSLocalPhotoProtectionStore().healthy && GSNativeRoutingEnabled() &&
+                            GSBackupRequestsAvailable();
+            [alert addAction:cloud];
             [alert
                 addAction:[UIAlertAction
-                              actionWithTitle:GSL(@"Remove protection without deleting")
-                                        style:UIAlertActionStyleDefault
+                              actionWithTitle:GSL(@"Use normal deletion (may delete device copy)")
+                                        style:UIAlertActionStyleDestructive
                                       handler:^(UIAlertAction *action) {
-                                          NSError *error = nil;
-                                          if (!GSNativeAccountMatches(accountID) ||
-                                              ![GSLocalPhotoProtectionStore()
-                                                  updateIdentifiers:targets[@"localIDs"]
-                                                            protect:NO
-                                                              error:&error]) {
-                                              [proxy
-                                                  reject:GSDeleteError(GSL(
-                                                             @"Could not save local photo "
-                                                             @"protection. Nothing was deleted."))];
-                                              return;
-                                          }
-                                          [proxy
-                                              reject:[NSError errorWithDomain:NSCocoaErrorDomain
-                                                                         code:NSUserCancelledError
-                                                                     userInfo:nil]];
+                                          GSDeleteContinue(command, proxy, targets[@"localIDs"], NO,
+                                                           accountID, localPhase);
                                       }]];
-        [alert addAction:[UIAlertAction
-                             actionWithTitle:GSL(@"Cancel")
-                                       style:UIAlertActionStyleCancel
-                                     handler:^(UIAlertAction *action) {
-                                         [proxy reject:[NSError errorWithDomain:NSCocoaErrorDomain
-                                                                           code:NSUserCancelledError
-                                                                       userInfo:nil]];
-                                     }]];
-        [presenter presentViewController:alert animated:YES completion:nil];
+            BOOL protectedSelection = NO;
+            for (NSString *identifier in targets[@"localIDs"])
+                protectedSelection |= [GSLocalPhotoProtectionStore() contains:identifier];
+            if (protectedSelection)
+                [alert
+                    addAction:
+                        [UIAlertAction
+                            actionWithTitle:GSL(@"Remove protection without deleting")
+                                      style:UIAlertActionStyleDefault
+                                    handler:^(UIAlertAction *action) {
+                                        NSError *error = nil;
+                                        if (!GSNativeAccountMatches(accountID) ||
+                                            ![GSLocalPhotoProtectionStore()
+                                                updateIdentifiers:targets[@"localIDs"]
+                                                          protect:NO
+                                                            error:&error]) {
+                                            [proxy
+                                                reject:GSDeleteError(GSL(
+                                                           @"Could not save local photo "
+                                                           @"protection. Nothing was deleted."))];
+                                            return;
+                                        }
+                                        [proxy reject:[NSError errorWithDomain:NSCocoaErrorDomain
+                                                                          code:NSUserCancelledError
+                                                                      userInfo:nil]];
+                                    }]];
+            [alert addAction:[UIAlertAction
+                                 actionWithTitle:GSL(@"Cancel")
+                                           style:UIAlertActionStyleCancel
+                                         handler:^(UIAlertAction *action) {
+                                             [proxy reject:[NSError
+                                                               errorWithDomain:NSCocoaErrorDomain
+                                                                          code:NSUserCancelledError
+                                                                      userInfo:nil]];
+                                         }]];
+            GSDeleteOutcome(@"presenting_choice");
+            [presenter presentViewController:alert
+                                    animated:YES
+                                  completion:^{
+                                      @synchronized(GSLocalPhotoProtectionStore()) {
+                                          GSDeleteChoicesShown++;
+                                          GSDeleteLastOutcome = @"choice_presented";
+                                      }
+                                  }];
+        });
     });
     return proxy;
 }
+static id GSDeleteExecute(id command, SEL selector) {
+    return GSDeleteStart(command, NO);
+}
 static id GSDeleteLocal(id command, SEL selector) {
-    if (![objc_getAssociatedObject(command, &GSDeleteChoiceKey) isEqual:@"cloud"])
+    NSString *choice = objc_getAssociatedObject(command, &GSDeleteChoiceKey);
+    if (!choice)
+        return GSDeleteStart(command, YES);
+    if (![choice isEqual:@"cloud"])
         return GSDeleteLocalOriginal(command, selector);
     // Use the native empty-selection branch to produce its own completed promise
     // and void-result sentinel. Never return nil or guess a private promise result.
@@ -390,6 +462,15 @@ NSDictionary *GSCloudOnlyDeletionSnapshot(void) {
             @"protectedLocalCount" : @(store.count),
             @"blockedLocalDeletes" : @(GSBlockedLocalDeletes),
             @"unresolvedSelections" : @(GSUnresolvedSelections),
+            @"executeIntercepted" : @(GSDeleteIntercepted),
+            @"localPhaseIntercepted" : @(GSLocalPhaseIntercepted),
+            @"choicesShown" : @(GSDeleteChoicesShown),
+            @"lastOutcome" : GSDeleteLastOutcome,
+            @"executeHookActive" :
+                @(GSDeleteInstalled &&
+                  method_getImplementation(class_getInstanceMethod(
+                      NSClassFromString(@"PHSDeletePhotoCommand"),
+                      NSSelectorFromString(@"execute"))) == (IMP)GSDeleteExecute),
             @"availabilityReason" : GSDeleteAvailability
         };
     }

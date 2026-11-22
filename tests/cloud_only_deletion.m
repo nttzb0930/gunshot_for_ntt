@@ -296,6 +296,33 @@ int main(int argc, char **argv) {
         }
         assert(GSDeleteInstalled);
 
+        // The host confirmation can still be dismissing when execute is called.
+        UIAlertController *closingAlert = [UIAlertController new];
+        closingAlert.isBeingDismissed = YES;
+        FixturePresenter.presentedViewController = closingAlert;
+        GPCPromise *delayed = [Command() execute];
+        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 150 * NSEC_PER_MSEC),
+                       dispatch_get_main_queue(), ^{
+                           assert(CloudCalls == 0 && !delayed.failure);
+                           FixturePresenter.presentedViewController = nil;
+                       });
+        PumpUntil(^BOOL {
+            return FixturePresenter.presentedViewController != nil &&
+                   FixturePresenter.presentedViewController != closingAlert;
+        });
+        Choose(2);
+        assert(delayed.failure && CloudCalls == 0);
+
+        // A persistent modal must time out without falling back to native deletion.
+        FixturePresenter.presentedViewController = closingAlert;
+        GPCPromise *blocked = [Command() execute];
+        PumpUntil(^BOOL {
+            return blocked.failure != nil;
+        });
+        assert(FixturePresenter.presentedViewController == closingAlert && CloudCalls == 0);
+        assert([GSCloudOnlyDeletionSnapshot()[@"lastOutcome"] isEqual:@"presenter_unavailable"]);
+        FixturePresenter.presentedViewController = nil;
+
         PHSDeletePhotoCommand *unknown = Command();
         unknown.mediaItems = @[];
         GPCPromise *unknownPromise = [unknown execute];
@@ -373,12 +400,81 @@ int main(int argc, char **argv) {
         FixtureStore = [[GSLocalPhotoProtection alloc]
             initWithURL:[NSURL URLWithString:@"https://invalid.example/state"]];
         proxy = [GPCPromise new];
-        GSDeleteContinue(Command(), (id)proxy, @[ @"local-a" ], YES, @"account");
+        GSDeleteContinue(Command(), (id)proxy, @[ @"local-a" ], YES, @"account", NO);
         assert(proxy.failure &&
                CloudCalls == 3); // No destructive command after persistence failure.
         FixtureStore = savedStore;
+
+        // Real 7.20.2 trash UI calls deleteLocalAssets first and only enqueues
+        // execute after that promise succeeds. The chooser must precede BOTH.
+        NSError *removalError = nil;
+        BOOL removed = [FixtureStore updateIdentifiers:@[ @"local-a" ]
+                                               protect:NO
+                                                 error:&removalError];
+        assert(removed && !removalError);
+        DeletedAssets = nil;
+        NSUInteger cloudBeforeLocalPhase = CloudCalls;
+        command = Command();
+        GPCPromise *local = [command deleteLocalAssets];
+        assert([command deleteLocalAssets] == local);
+        Choose(2);
+        assert(local.failure && !local.value && CloudCalls == cloudBeforeLocalPhase &&
+               DeletedAssets == nil);
+
+        command = Command();
+        local = [command deleteLocalAssets];
+        Choose(0);
+        PumpUntil(^BOOL {
+            return local.value || local.failure;
+        });
+        assert(!local.failure && CloudCalls == cloudBeforeLocalPhase && DeletedAssets == nil);
+        assert([FixtureStore contains:@"local-a"]);
+        NSUInteger choicesBeforeExecute =
+            [GSCloudOnlyDeletionSnapshot()[@"choicesShown"] unsignedIntegerValue];
+        proxy = [command execute]; // Simulate the host command queue, using the SAME command.
+        PumpUntil(^BOOL {
+            return proxy.value || proxy.failure;
+        });
+        assert(!proxy.failure && CloudCalls == cloudBeforeLocalPhase + 1 && DeletedAssets == nil);
+        assert(FixturePresenter.presentedViewController == nil);
+        assert([GSCloudOnlyDeletionSnapshot()[@"choicesShown"] unsignedIntegerValue] ==
+               choicesBeforeExecute);
+
+        // Explicit normal deletion preserves the native local-then-cloud order.
+        command = Command();
+        local = [command deleteLocalAssets];
+        Choose(1);
+        assert(local.value && !local.failure && DeletedAssets.count == 1 &&
+               CloudCalls == cloudBeforeLocalPhase + 1 && ![FixtureStore contains:@"local-a"]);
+        proxy = [command execute];
+        PumpUntil(^BOOL {
+            return proxy.value || proxy.failure;
+        });
+        assert(!proxy.failure && CloudCalls == cloudBeforeLocalPhase + 2);
+        assert(FixturePresenter.presentedViewController == nil);
+
+        // An account change between local preparation and queued execution aborts cloud deletion.
+        DeletedAssets = nil;
+        command = Command();
+        local = [command deleteLocalAssets];
+        Choose(0);
+        PumpUntil(^BOOL {
+            return local.value || local.failure;
+        });
+        assert(local.value && !local.failure && DeletedAssets == nil);
+        AccountMatches = NO;
+        proxy = [command execute];
+        PumpUntil(^BOOL {
+            return proxy.failure != nil;
+        });
+        assert(CloudCalls == cloudBeforeLocalPhase + 2 && DeletedAssets == nil);
+        assert([FixtureStore contains:@"local-a"]);
+        assert([GSCloudOnlyDeletionSnapshot()[@"localPhaseIntercepted"] unsignedIntegerValue] == 4);
+        assert([GSCloudOnlyDeletionSnapshot()[@"executeHookActive"] boolValue]);
+        AccountMatches = YES;
         [NSFileManager.defaultManager removeItemAtURL:root error:nil];
         NSLog(@"PASS synthetic cloud-only choice, cancellation, native promise forwarding, local "
-              @"protection, sync filtering, queue/account guards and normal deletion");
+              @"protection, sync filtering, modal dismissal, local-first host ordering, "
+              @"queue/account guards and normal deletion");
     }
 }
