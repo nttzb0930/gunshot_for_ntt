@@ -135,6 +135,7 @@ static void GSStart(id request, SEL selector, IMP original) {
     id protectedAsset = GSPhotosGetObject(request, @"asset");
     if ([protectedAsset isKindOfClass:PHAsset.class] &&
         [GSLocalPhotoProtectionStore() contains:((PHAsset *)protectedAsset).localIdentifier]) {
+        [GSLocalPhotoProtectionStore() recordBlockedUpload];
         GSCount(@"cloudDeletedAssetBlocked");
         GSFail(request, 6);
         return;

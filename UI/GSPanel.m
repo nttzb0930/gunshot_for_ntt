@@ -7,6 +7,8 @@
 #import "GSAlbumPicker.h"
 #import "GSAlbumStatus.h"
 #import "GSCloudAlbumPicker.h"
+#import "GSProtectedPhotosController.h"
+#import "../Native/GSLocalPhotoProtection.h"
 #import "../Native/GSNativeAccount.h"
 #import "../Native/GSAccountConnection.h"
 #if !GS_JAILED
@@ -342,6 +344,9 @@ static char GSPanelPresentationKey;
         ];
     else if (control == 22)
         state = @(self.busy);
+    else if (control == 24)
+        state =
+            @[ @(GSLocalPhotoProtectionStore().count), @(GSLocalPhotoProtectionStore().healthy) ];
     return @[ language, @(control), state ];
 }
 - (void)reloadTablePreservingPosition {
@@ -577,7 +582,7 @@ static char GSPanelPresentationKey;
     if (GSIsGooglePhotos())
         [groups addObject:@{
             @"title" : GSL(@"Google Photos integration"),
-            @"rows" : @[ @10 ],
+            @"rows" : @[ @10, @24 ],
             @"footer" : GS_BACKUP_HELP
         }];
     [groups addObject:@{@"title" : GSL(@"Queue management"), @"rows" : @[ @8, @9 ]}];
@@ -585,8 +590,8 @@ static char GSPanelPresentationKey;
         [groups addObject:@{
             @"title" : GSL(@"Diagnostics"),
             @"rows" : @[ @11, @12 ],
-            @"footer" : GSL(@"Export one report for upload and album issues. Tokens and media are "
-                            @"never recorded.")
+            @"footer" : GSL(@"Export one report for upload, album, and photo protection issues. "
+                            @"Tokens and media are never recorded.")
         }];
     [groups addObject:@{
         @"title" : GSL(@"Appearance"),
@@ -791,7 +796,8 @@ static char GSPanelPresentationKey;
             GSL(@"Album destination"),
             GSL(@"Album status"),
             GSL(@"Upload photos and videos"),
-            GSL(@"Settings")
+            GSL(@"Settings"),
+            GSL(@"Photos kept on this iPhone")
         ];
         NSArray *icons = @[
             @"photo",
@@ -817,7 +823,8 @@ static char GSPanelPresentationKey;
             @"rectangle.stack.badge.plus",
             @"waveform.path.ecg",
             @"square.and.arrow.up",
-            @"gearshape"
+            @"gearshape",
+            @"photo.badge.checkmark"
         ];
         cell.textLabel.text = titles[control];
         cell.imageView.image = [UIImage systemImageNamed:icons[control]];
@@ -825,6 +832,12 @@ static char GSPanelPresentationKey;
         if (control == 22)
             cell.detailTextLabel.text =
                 GSL(@"Choose photos, an album destination, and view progress");
+        if (control == 24)
+            cell.detailTextLabel.text =
+                GSLocalPhotoProtectionStore().healthy
+                    ? [NSString stringWithFormat:GSL(@"%lu photos kept"),
+                                                 (unsigned long)GSLocalPhotoProtectionStore().count]
+                    : GSL(@"Photo protection data is unavailable. No protection was removed.");
         if (control == 13 || control == 14) {
             NSString *title =
                 control == 13 ? ([self.accounts[@"selected"] length] ? GSL(@"Reconnect")
@@ -1367,6 +1380,11 @@ static char GSPanelPresentationKey;
     }
     self.sheetSourcePath = path;
     NSInteger control = [self controlAtPath:path];
+    if (control == 24) {
+        [self.navigationController pushViewController:[GSProtectedPhotosController new]
+                                             animated:YES];
+        return;
+    }
     if (control == 22) {
         [self openUploadPanel];
         return;

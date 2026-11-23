@@ -100,6 +100,7 @@ static NSDictionary *GSDeleteTargets(id command) {
         return GSDeleteUnresolved(@"selection_unavailable");
     NSMutableSet *localIDs = [NSMutableSet set];
     BOOL allBackedUp = YES;
+    BOOL anyBackedUp = NO;
     BOOL allLocalLookupsComplete = YES;
     id storeResult = GSPhotosGetObject(source, @"storeResult");
     Class cls = NSClassFromString(@"PHSPhotoDeletionStrategy");
@@ -144,6 +145,7 @@ static NSDictionary *GSDeleteTargets(id command) {
             backedUp |= serverPhotos.count > 0;
         }
         allBackedUp &= backedUp;
+        anyBackedUp |= backedUp;
         allLocalLookupsComplete &= localLookupComplete;
         for (id identifier in ids) {
             if (![identifier isKindOfClass:NSString.class] || ![identifier length] ||
@@ -162,10 +164,12 @@ static NSDictionary *GSDeleteTargets(id command) {
     @synchronized(GSLocalPhotoProtectionStore()) {
         GSDeleteLastResolution = onlyCloud ? @"verified_cloud_only" : @"resolved_local";
     }
-    return
-        @{@"localIDs" : identifiers,
-          @"allBackedUp" : @(allBackedUp),
-          @"onlyCloud" : @(onlyCloud)};
+    return @{
+        @"localIDs" : identifiers,
+        @"allBackedUp" : @(allBackedUp),
+        @"anyBackedUp" : @(anyBackedUp),
+        @"onlyCloud" : @(onlyCloud)
+    };
 }
 static UIViewController *GSDeletePresenter(void) {
     for (UIScene *scene in UIApplication.sharedApplication.connectedScenes) {
@@ -381,11 +385,10 @@ static id GSDeleteStart(id command, BOOL localPhase) {
             UIAlertController *alert = [UIAlertController
                 alertControllerWithTitle:GSL(@"Choose where to delete")
                                  message:
-                                     GSL(@"Experimental: keep these photos on this iPhone. New "
-                                         @"uploads of these local assets are blocked. GoToHP "
-                                         @"backup integration must be enabled. Finish all uploads "
-                                         @"first. Other devices signed in to the same account may "
-                                         @"still sync the deletion and remove their copies.")
+                                     GSL(@"Experimental. Deleting only from Google Photos keeps "
+                                         @"iPhone copies and blocks GoToHP reuploads. Requires "
+                                         @"GoToHP backup integration and finished uploads. "
+                                         @"Other devices may still sync deletions.")
                           preferredStyle:UIAlertControllerStyleAlert];
             UIAlertAction *cloud = [UIAlertAction
                 actionWithTitle:GSL(@"Delete only from Google Photos")
@@ -412,40 +415,20 @@ static id GSDeleteStart(id command, BOOL localPhase) {
                             GSLocalPhotoProtectionStore().healthy && GSNativeRoutingEnabled() &&
                             GSBackupRequestsAvailable();
             [alert addAction:cloud];
-            [alert
-                addAction:[UIAlertAction
-                              actionWithTitle:GSL(@"Use normal deletion (may delete device copy)")
-                                        style:UIAlertActionStyleDestructive
-                                      handler:^(UIAlertAction *action) {
-                                          GSDeleteContinue(command, proxy, targets[@"localIDs"], NO,
-                                                           accountID, localPhase);
-                                      }]];
-            BOOL protectedSelection = NO;
-            for (NSString *identifier in targets[@"localIDs"])
-                protectedSelection |= [GSLocalPhotoProtectionStore() contains:identifier];
-            if (protectedSelection)
-                [alert
-                    addAction:
-                        [UIAlertAction
-                            actionWithTitle:GSL(@"Remove protection without deleting")
-                                      style:UIAlertActionStyleDefault
-                                    handler:^(UIAlertAction *action) {
-                                        NSError *error = nil;
-                                        if (!GSNativeAccountMatches(accountID) ||
-                                            ![GSLocalPhotoProtectionStore()
-                                                updateIdentifiers:targets[@"localIDs"]
-                                                          protect:NO
-                                                            error:&error]) {
-                                            [proxy
-                                                reject:GSDeleteError(GSL(
-                                                           @"Could not save local photo "
-                                                           @"protection. Nothing was deleted."))];
-                                            return;
-                                        }
-                                        [proxy reject:[NSError errorWithDomain:NSCocoaErrorDomain
-                                                                          code:NSUserCancelledError
-                                                                      userInfo:nil]];
-                                    }]];
+            NSString *normalTitle = GSL(@"Use normal deletion");
+            if ([targets[@"localIDs"] count]) {
+                if ([targets[@"allBackedUp"] boolValue])
+                    normalTitle = GSL(@"Delete both copies");
+                else if (![targets[@"anyBackedUp"] boolValue])
+                    normalTitle = GSL(@"Delete from iPhone");
+            }
+            [alert addAction:[UIAlertAction actionWithTitle:normalTitle
+                                                      style:UIAlertActionStyleDestructive
+                                                    handler:^(UIAlertAction *action) {
+                                                        GSDeleteContinue(command, proxy,
+                                                                         targets[@"localIDs"], NO,
+                                                                         accountID, localPhase);
+                                                    }]];
             [alert addAction:[UIAlertAction
                                  actionWithTitle:GSL(@"Cancel")
                                            style:UIAlertActionStyleCancel
@@ -535,6 +518,7 @@ NSDictionary *GSCloudOnlyDeletionSnapshot(void) {
             @"localGuard" : @(GSPhotoKitGuardInstalled),
             @"storeHealthy" : @(store.healthy),
             @"protectedLocalCount" : @(store.count),
+            @"protection" : store.diagnostics,
             @"blockedLocalDeletes" : @(GSBlockedLocalDeletes),
             @"unresolvedSelections" : @(GSUnresolvedSelections),
             @"executeIntercepted" : @(GSDeleteIntercepted),

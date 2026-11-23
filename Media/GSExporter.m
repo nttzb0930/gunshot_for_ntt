@@ -97,6 +97,7 @@ static NSArray<NSURL *> *GSWriteCurrentResources(PHAsset *asset, NSURL *director
 }
 NSArray<NSURL *> *GSExportAsset(PHAsset *asset, NSURL *directory, NSError **error) {
     if ([GSLocalPhotoProtectionStore() contains:asset.localIdentifier]) {
+        [GSLocalPhotoProtectionStore() recordBlockedUpload];
         if (error)
             *error = [NSError
                 errorWithDomain:@"GoToHP.LocalProtection"

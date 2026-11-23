@@ -12,6 +12,9 @@ static NSError *GSProtectionError(void) {
     NSURL *_url;
     NSSet<NSString *> *_identifiers;
     BOOL _healthy;
+    NSUInteger _blockedUploads, _unprotectAttempts, _unprotectSucceeded, _unprotectFailed;
+    NSString *_lastUnprotectResult;
+    NSInteger _lastUnprotectErrorCode;
 }
 - (instancetype)initWithURL:(NSURL *)url {
     if (!(self = [super init]))
@@ -61,6 +64,55 @@ static NSError *GSProtectionError(void) {
     @synchronized(self) {
         // Never silently discard a damaged protection database and resume deletions.
         return !_healthy || [_identifiers containsObject:identifier ?: @""];
+    }
+}
+- (NSArray<NSString *> *)protectedIdentifiers {
+    @synchronized(self) {
+        return _healthy ? [_identifiers.allObjects sortedArrayUsingSelector:@selector(compare:)]
+                        : @[];
+    }
+}
+- (NSDictionary *)diagnostics {
+    @synchronized(self) {
+        return @{
+            @"storeHealthy" : @(_healthy),
+            @"protectedCount" : @(_identifiers.count),
+            @"blockedUploads" : @(_blockedUploads),
+            @"unprotectAttempts" : @(_unprotectAttempts),
+            @"unprotectSucceeded" : @(_unprotectSucceeded),
+            @"unprotectFailed" : @(_unprotectFailed),
+            @"lastUnprotectResult" : _lastUnprotectResult ?: @"not_requested",
+            @"lastUnprotectErrorCode" : @(_lastUnprotectErrorCode)
+        };
+    }
+}
+- (void)recordBlockedUpload {
+    @synchronized(self) {
+        _blockedUploads++;
+    }
+}
+- (BOOL)allowBackupForIdentifiers:(NSArray<NSString *> *)identifiers error:(NSError **)error {
+    @synchronized(self) {
+        _unprotectAttempts++;
+        if (![identifiers isKindOfClass:NSArray.class] || !identifiers.count) {
+            _unprotectFailed++;
+            _lastUnprotectResult = @"invalid_selection";
+            _lastUnprotectErrorCode = 1;
+            if (error)
+                *error = GSProtectionError();
+            return NO;
+        }
+        NSError *failure = nil;
+        BOOL saved = [self updateIdentifiers:identifiers protect:NO error:&failure];
+        if (saved)
+            _unprotectSucceeded++;
+        else
+            _unprotectFailed++;
+        _lastUnprotectResult = saved ? @"succeeded" : @"update_failed";
+        _lastUnprotectErrorCode = saved ? 0 : (failure ? failure.code : 1);
+        if (!saved && error)
+            *error = failure ?: GSProtectionError();
+        return saved;
     }
 }
 - (BOOL)updateIdentifiers:(NSArray<NSString *> *)identifiers

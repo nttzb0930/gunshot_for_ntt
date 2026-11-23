@@ -96,9 +96,20 @@ A PhotoKit guard also excludes protected assets from later deletion requests in
 this Google Photos process. New native GoToHP backup requests and asset exports
 reject protected identities. Protection persists across app launches.
 
-For protected items, **Remove protection without deleting** allows future uploads
-without sending a deletion command. Choosing normal deletion explicitly removes
-protection for the resolved selection, then uses the native deletion behavior.
+The deletion chooser contains only cloud deletion, normal deletion and Cancel.
+For fully resolved selections, the normal action is labeled **Delete both copies**
+or **Delete from iPhone** when appropriate; mixed/unknown cases retain a generic
+normal-deletion label. Choosing normal deletion explicitly removes protection for
+the resolved selection, then uses the native deletion behavior.
+
+**GoToHP > Photos kept on this iPhone** opens a dedicated local management page.
+It reads an immutable identifier snapshot through `GSLocalPhotoProtection`, loads
+available PhotoKit assets on a worker, and requests visible thumbnails without
+network downloads. Inaccessible assets retain a placeholder and their saved
+protection; absence from a fetch is not treated as proof of deletion. Selected
+items can explicitly **Allow backup again**, with confirmation that normal backup
+and deletion behavior resumes. This operation changes only protection state,
+never deletes media or enqueues uploads. A failed write leaves protection intact.
 Do not uninstall the tweak or clear the app's data while relying on protection.
 Other devices, Apple Photos/iCloud operations and other apps are outside its scope.
 File imports, separate copies with new local IDs and explicit retries of previously
@@ -119,6 +130,10 @@ hook validation refusals before a native phase starts. A native success records
 the promise result, not independent proof that the item disappeared from the UI.
 The existing backup report counts `cloudDeletedAssetBlocked`. Neither section
 includes local identities, photo contents or credentials.
+The same report includes `cloudOnlyDeletion.protection`: store health, protected
+count, upload-block attempts (native backup and asset export), unprotect attempts,
+successes, failures, last result and numeric error code. Counters cover this launch;
+only protection identities persist. No additional diagnostics screen is added.
 
 This is an experimental implementation based on static IPA inspection. Native
 synthetic fixtures cover cancellation, promise forwarding, restoration after a

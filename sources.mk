@@ -4,6 +4,7 @@ GUNSHOT_HOST_FILES = \
 	UI/GSAlbumManagement.m \
 	UI/GSAlbumStatus.m \
 	UI/GSCloudAlbumPicker.m \
+	UI/GSProtectedPhotosController.m \
 	UI/GSDeveloperLinks.m \
 	UI/GSPhotosGlass.m \
 	UI/GSPhotosGlassVisibilityGuard.m \

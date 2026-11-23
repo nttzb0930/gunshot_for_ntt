@@ -403,7 +403,11 @@ int main(int argc, char **argv) {
         assert(DeletedAssets.count == 1 && DeletedAssets[0] == b); // Simulated later deletion sync.
         proxy = [Command() execute];
         Choose(2);
-        assert(proxy.failure && CloudCalls == 1 && ![FixtureStore contains:@"local-a"]);
+        assert(proxy.failure && CloudCalls == 1 && [FixtureStore contains:@"local-a"]);
+        assert([FixtureStore allowBackupForIdentifiers:@[ @"local-a" ] error:nil]);
+        assert(![FixtureStore contains:@"local-a"] && CloudCalls == 1);
+        assert([GSCloudOnlyDeletionSnapshot()[@"protection"][@"unprotectSucceeded"]
+                   unsignedIntegerValue] == 1);
         assert([FixtureStore updateIdentifiers:@[ @"local-a" ] protect:YES error:nil]);
 
         QueueBusy = YES;
