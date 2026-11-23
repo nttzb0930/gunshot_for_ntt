@@ -290,5 +290,14 @@
   "Back up selected photos again?": "Sao lưu lại các ảnh đã chọn?",
   "The selected photos will be unprotected and queued using the current account, upload quality, and album destination. Progress and results appear here.": "Các ảnh đã chọn sẽ được gỡ bảo vệ và đưa vào hàng đợi theo tài khoản, chất lượng tải lên và album đích hiện tại. Tiến trình và kết quả sẽ hiển thị tại đây.",
   "Reconnect to Google Photos before backing up again.": "Kết nối lại Google Photos trước khi sao lưu lại.",
-  "Retry this upload?": "Thử tải lên lại mục này?"
+  "Retry this upload?": "Thử tải lên lại mục này?",
+  "Photo access is not granted. Check Photos permission in Settings.": "Chưa được cấp quyền truy cập ảnh. Kiểm tra quyền Ảnh trong Cài đặt.",
+  "Photo access is restricted by iOS.": "Quyền truy cập ảnh đang bị iOS hạn chế.",
+  "Limited Photos access: this ID was not returned. Check the selected photos in Settings.": "Chỉ được truy cập ảnh đã chọn; không tìm thấy ID này. Kiểm tra danh sách ảnh được phép trong Cài đặt.",
+  "Full Photos access: no photo was returned for the saved ID. This does not confirm deletion.": "Đã cấp toàn quyền ảnh nhưng không tìm thấy ID đã lưu. Chưa thể kết luận ảnh đã bị xóa.",
+  "Photos permission changed during lookup. Pull down to refresh.": "Quyền truy cập ảnh đã thay đổi khi đang kiểm tra. Kéo xuống để làm mới.",
+  "Could not determine Photos permission. Pull down to retry.": "Chưa xác định được quyền truy cập ảnh. Kéo xuống để thử lại.",
+  "Photo lookup failed. Pull down to retry. Protection is unchanged.": "Tra cứu ảnh thất bại. Kéo xuống để thử lại. Dấu bảo vệ vẫn được giữ.",
+  "Photo found; preview requires an iCloud download.": "Đã tìm thấy ảnh; cần tải từ iCloud để xem trước.",
+  "Photo found; preview could not be loaded. Pull down to retry.": "Đã tìm thấy ảnh nhưng chưa tải được hình xem trước. Kéo xuống để thử lại."
 }

@@ -8,6 +8,10 @@ static BOOL GSValidProtectedID(id value) {
 static NSError *GSProtectionError(void) {
     return [NSError errorWithDomain:@"GoToHP.LocalProtection" code:1 userInfo:nil];
 }
+static NSString *GSProtectionDiagnosticCode(id value, NSArray *allowed, NSString *fallback) {
+    return [value isKindOfClass:NSString.class] && [allowed containsObject:value] ? value
+                                                                                  : fallback;
+}
 @implementation GSLocalPhotoProtection {
     NSURL *_url;
     NSSet<NSString *> *_identifiers;
@@ -15,6 +19,8 @@ static NSError *GSProtectionError(void) {
     NSUInteger _blockedUploads, _unprotectAttempts, _unprotectSucceeded, _unprotectFailed;
     NSString *_lastUnprotectResult;
     NSInteger _lastUnprotectErrorCode;
+    NSDictionary *_photoLookup;
+    NSMutableDictionary *_previewResults;
 }
 - (instancetype)initWithURL:(NSURL *)url {
     if (!(self = [super init]))
@@ -82,8 +88,57 @@ static NSError *GSProtectionError(void) {
             @"unprotectSucceeded" : @(_unprotectSucceeded),
             @"unprotectFailed" : @(_unprotectFailed),
             @"lastUnprotectResult" : _lastUnprotectResult ?: @"not_requested",
-            @"lastUnprotectErrorCode" : @(_lastUnprotectErrorCode)
+            @"lastUnprotectErrorCode" : @(_lastUnprotectErrorCode),
+            @"photoLookup" : _photoLookup
+                ?: @{@"authorization" : @"unknown", @"queryState" : @"not_checked"},
+            @"previewThisLaunch" : [_previewResults copy] ?: @{}
         };
+    }
+}
+- (void)recordPhotoLookup:(NSDictionary *)report {
+    if (![report isKindOfClass:NSDictionary.class])
+        return;
+    NSMutableDictionary *safe = [NSMutableDictionary dictionary];
+    safe[@"authorization"] = GSProtectionDiagnosticCode(
+        report[@"authorization"],
+        @[ @"unknown", @"not_determined", @"restricted", @"denied", @"authorized", @"limited" ],
+        @"unknown");
+    safe[@"queryState"] = GSProtectionDiagnosticCode(
+        report[@"queryState"],
+        @[
+            @"not_checked", @"not_needed", @"access_blocked", @"succeeded", @"partial_failure",
+            @"failed", @"permission_changed"
+        ],
+        @"failed");
+    safe[@"error"] = GSProtectionDiagnosticCode(
+        report[@"error"],
+        @[
+            @"", @"invalid_identifiers", @"authorization_exception", @"authorization_changed",
+            @"nil_fetch_result", @"fetch_exception", @"unexpected_result"
+        ],
+        @"unexpected_result");
+    for (NSString *key in @[
+             @"requested", @"resolved", @"notReturned", @"permissionBlocked", @"queryFailed",
+             @"queryFailures", @"metadataFailures", @"invalidIdentifiers"
+         ])
+        safe[key] = [report[key] isKindOfClass:NSNumber.class] && [report[key] longLongValue] >= 0
+                        ? @([report[key] unsignedLongLongValue])
+                        : @0;
+    safe[@"includeHiddenAssets"] =
+        @([report[@"includeHiddenAssets"] isKindOfClass:NSNumber.class] &&
+          [report[@"includeHiddenAssets"] boolValue]);
+    @synchronized(self) {
+        _photoLookup = [safe copy];
+    }
+}
+- (void)recordPreviewResult:(NSString *)outcome {
+    if (![@[ @"requested", @"available", @"cloud_only", @"failed", @"cancelled" ]
+            containsObject:outcome ?: @""])
+        return;
+    @synchronized(self) {
+        if (!_previewResults)
+            _previewResults = [NSMutableDictionary dictionary];
+        _previewResults[outcome] = @([_previewResults[outcome] unsignedIntegerValue] + 1);
     }
 }
 - (void)recordBlockedUpload {

@@ -155,6 +155,22 @@ count, upload-block attempts (native backup and asset export), unprotect attempt
 successes, failures, last result and numeric error code. Counters cover this launch;
 protection identities and queue history persist. No additional diagnostics screen is added.
 
+`cloudOnlyDeletion.protection.photoLookup` describes the latest read-only lookup:
+Photos authorization, query state, fixed error code, and counts of requested,
+resolved, not-returned, permission-blocked and failed IDs. Queries include hidden
+assets and use pages of at most 64 identifiers. Permission changes invalidate the
+lookup; metadata failures do not turn a resolved asset into a missing one. Full
+access with no matching saved ID is not proof of deletion. The page displays these
+reasons individually, retries on pull-to-refresh/foreground, and never removes
+protection or remaps IDs because a lookup failed.
+
+`previewThisLaunch` counts thumbnail requests and their available, cloud-only,
+failed or cancelled outcomes. These are request attempts, not unique photos.
+Finding an asset and loading its preview are separate: an iCloud-only or failed
+thumbnail does not make the asset inaccessible for selection. Cached thumbnails
+avoid restarting requests on each upload progress update. Neither diagnostic
+field exports local IDs, filenames, media, or raw exception/error messages.
+
 This is an experimental implementation based on static IPA inspection. Native
 synthetic fixtures cover cancellation, promise forwarding, restoration after a
 protection write, simulated deletion sync, queue/account guards, normal deletion

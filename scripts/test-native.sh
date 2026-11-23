@@ -5,6 +5,8 @@ if [[ $(uname -s) != Darwin ]]; then echo "Native fixtures require macOS and Xco
 mkdir -p .build
 clang -fobjc-arc -framework Foundation Native/GSLocalPhotoProtection.m tests/local_photo_protection.m -o .build/local-photo-protection-test
 .build/local-photo-protection-test
+clang -fobjc-arc -framework Foundation -Itests/native-shims Native/GSProtectedPhotoLookup.m tests/protected_photo_lookup.m -o .build/protected-photo-lookup-test
+.build/protected-photo-lookup-test
 clang -fobjc-arc -framework Foundation UI/GSProtectedPhotoStatus.m tests/protected_photo_status.m -o .build/protected-photo-status-test
 .build/protected-photo-status-test
 clang -fobjc-arc -framework Foundation -Itests/delete-shims Native/GSLocalPhotoProtection.m tests/cloud_only_deletion.m -o .build/cloud-only-deletion-test

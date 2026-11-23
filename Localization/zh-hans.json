@@ -290,5 +290,14 @@
   "Back up selected photos again?": "重新备份所选照片？",
   "The selected photos will be unprotected and queued using the current account, upload quality, and album destination. Progress and results appear here.": "将取消所选照片的保护，并使用当前账号、上传质量和目标相册加入队列。进度和结果将显示在此处。",
   "Reconnect to Google Photos before backing up again.": "请先重新连接 Google 相册，再重新备份。",
-  "Retry this upload?": "重试此次上传？"
+  "Retry this upload?": "重试此次上传？",
+  "Photo access is not granted. Check Photos permission in Settings.": "尚未获得照片访问权限。请在设置中检查照片权限。",
+  "Photo access is restricted by iOS.": "照片访问受到 iOS 限制。",
+  "Limited Photos access: this ID was not returned. Check the selected photos in Settings.": "仅允许访问部分照片，未找到此 ID。请在设置中检查已选照片。",
+  "Full Photos access: no photo was returned for the saved ID. This does not confirm deletion.": "拥有全部照片访问权限，但未找到与已保存 ID 匹配的照片。这并不代表照片已被删除。",
+  "Photos permission changed during lookup. Pull down to refresh.": "查询时照片权限发生变化。请下拉刷新。",
+  "Could not determine Photos permission. Pull down to retry.": "无法确定照片访问权限。请下拉重试。",
+  "Photo lookup failed. Pull down to retry. Protection is unchanged.": "照片查询失败。请下拉重试。保护状态保持不变。",
+  "Photo found; preview requires an iCloud download.": "已找到照片；预览需要从 iCloud 下载。",
+  "Photo found; preview could not be loaded. Pull down to retry.": "已找到照片，但无法加载预览。请下拉重试。"
 }

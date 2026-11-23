@@ -290,5 +290,14 @@
   "Back up selected photos again?": "選択した写真を再バックアップしますか？",
   "The selected photos will be unprotected and queued using the current account, upload quality, and album destination. Progress and results appear here.": "選択した写真の保護を解除し、現在のアカウント、画質、保存先アルバムでキューに追加します。進行状況と結果はここに表示されます。",
   "Reconnect to Google Photos before backing up again.": "再バックアップする前にGoogleフォトに再接続してください。",
-  "Retry this upload?": "このアップロードを再試行しますか？"
+  "Retry this upload?": "このアップロードを再試行しますか？",
+  "Photo access is not granted. Check Photos permission in Settings.": "写真へのアクセスが許可されていません。設定で写真の権限を確認してください。",
+  "Photo access is restricted by iOS.": "iOSによって写真へのアクセスが制限されています。",
+  "Limited Photos access: this ID was not returned. Check the selected photos in Settings.": "写真へのアクセスは一部のみ許可されており、このIDは見つかりません。設定で選択した写真を確認してください。",
+  "Full Photos access: no photo was returned for the saved ID. This does not confirm deletion.": "写真へのフルアクセスがありますが、保存したIDに一致する写真が見つかりません。削除されたとは限りません。",
+  "Photos permission changed during lookup. Pull down to refresh.": "検索中に写真の権限が変更されました。下に引いて更新してください。",
+  "Could not determine Photos permission. Pull down to retry.": "写真へのアクセス権限を確認できませんでした。下に引いて再試行してください。",
+  "Photo lookup failed. Pull down to retry. Protection is unchanged.": "写真の検索に失敗しました。下に引いて再試行してください。保護は維持されています。",
+  "Photo found; preview requires an iCloud download.": "写真が見つかりました。プレビューにはiCloudからのダウンロードが必要です。",
+  "Photo found; preview could not be loaded. Pull down to retry.": "写真は見つかりましたが、プレビューを読み込めません。下に引いて再試行してください。"
 }

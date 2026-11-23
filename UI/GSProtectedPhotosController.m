@@ -3,22 +3,53 @@
 #import "GSProtectedPhotoStatus.h"
 #import "../Media/GSBatchImport.h"
 #import "../Native/GSLocalPhotoProtection.h"
+#import "../Native/GSProtectedPhotoLookup.h"
 #import "../Native/GSNativeAccount.h"
 #import "../Native/GSNativeRouting.h"
 #import "../Shared/GSLocalization.h"
 #import "../Shared/IPCProtocol.h"
 #import <Photos/Photos.h>
 
+@interface GSProtectedPreviewRequest : NSObject
+@property (nonatomic) BOOL finished;
+- (void)finish:(NSString *)outcome;
+@end
+@implementation GSProtectedPreviewRequest
+- (instancetype)init {
+    if ((self = [super init]))
+        [GSLocalPhotoProtectionStore() recordPreviewResult:@"requested"];
+    return self;
+}
+- (void)finish:(NSString *)outcome {
+    @synchronized(self) {
+        if (self.finished)
+            return;
+        self.finished = YES;
+        [GSLocalPhotoProtectionStore() recordPreviewResult:outcome];
+    }
+}
+- (void)dealloc {
+    [self finish:@"cancelled"];
+}
+@end
+
 @interface GSProtectedPhotoCell : UITableViewCell
 @property (nonatomic, copy) NSString *representedIdentifier;
 @property (nonatomic) PHImageRequestID imageRequest;
+@property (nonatomic, strong) GSProtectedPreviewRequest *previewRequest;
+- (void)cancelPreview;
 @end
 @implementation GSProtectedPhotoCell
-- (void)prepareForReuse {
-    [super prepareForReuse];
+- (void)cancelPreview {
+    [self.previewRequest finish:@"cancelled"];
+    self.previewRequest = nil;
     if (self.imageRequest != PHInvalidImageRequestID)
         [PHImageManager.defaultManager cancelImageRequest:self.imageRequest];
     self.imageRequest = PHInvalidImageRequestID;
+}
+- (void)prepareForReuse {
+    [super prepareForReuse];
+    [self cancelPreview];
     self.representedIdentifier = nil;
 }
 @end
@@ -28,6 +59,9 @@
 @property (nonatomic, copy) NSSet<NSString *> *protectedIDs;
 @property (nonatomic, copy) NSDictionary<NSString *, PHAsset *> *assets;
 @property (nonatomic, copy) NSDictionary *names, *jobs, *conditions;
+@property (nonatomic, copy) NSDictionary *lookupReasons;
+@property (nonatomic, strong) NSMutableDictionary *previewReasons;
+@property (nonatomic, strong) NSCache<NSString *, UIImage *> *previews;
 @property (nonatomic, copy) NSString *account, *submittedAccount, *refreshError;
 @property (nonatomic, strong) NSMutableSet<NSString *> *selected;
 @property (nonatomic, strong) NSMutableDictionary *preparation, *submitted;
@@ -36,7 +70,7 @@
 @property (nonatomic, strong) NSTimer *timer;
 @property (nonatomic) BOOL active, loading, refreshing, saving, previousToolbarHidden,
     needsAssetRefresh;
-@property (nonatomic) NSUInteger generation;
+@property (nonatomic) NSUInteger generation, assetGeneration;
 @end
 
 @implementation GSProtectedPhotosController
@@ -48,6 +82,10 @@
         _names = @{};
         _jobs = @{};
         _conditions = @{};
+        _lookupReasons = @{};
+        _previewReasons = [NSMutableDictionary dictionary];
+        _previews = [NSCache new];
+        _previews.countLimit = 128;
         _selected = [NSMutableSet set];
         _preparation = [NSMutableDictionary dictionary];
         _submitted = [NSMutableDictionary dictionary];
@@ -138,7 +176,8 @@
     self.loading = !self.identifiers.count;
     NSUInteger generation = self.generation;
     NSArray *previousIDs = self.identifiers;
-    NSDictionary *cachedAssets = self.assets, *cachedNames = self.names;
+    NSDictionary *cachedAssets = self.assets, *cachedNames = self.names,
+                 *cachedReasons = self.lookupReasons;
     NSDictionary *submitted = [self.submitted copy], *preparation = [self.preparation copy];
     NSString *submittedAccount = self.submittedAccount;
     [self updateEmptyState];
@@ -184,28 +223,14 @@
             }
         [identifiers
             addObjectsFromArray:[all.allObjects sortedArrayUsingSelector:@selector(compare:)]];
-        NSDictionary *assets = cachedAssets, *names = cachedNames;
-        if (reloadAssets || ![previousIDs isEqual:identifiers]) {
-            NSMutableDictionary *resolved = [NSMutableDictionary dictionary],
-                                *filenames = [NSMutableDictionary dictionary];
-            PHAuthorizationStatus authorization =
-                [PHPhotoLibrary authorizationStatusForAccessLevel:PHAccessLevelReadWrite];
-            if (identifiers.count && (authorization == PHAuthorizationStatusAuthorized ||
-                                      authorization == PHAuthorizationStatusLimited)) {
-                PHFetchOptions *fetchOptions = [PHFetchOptions new];
-                fetchOptions.includeHiddenAssets = YES;
-                PHFetchResult<PHAsset *> *result =
-                    [PHAsset fetchAssetsWithLocalIdentifiers:identifiers options:fetchOptions];
-                [result enumerateObjectsUsingBlock:^(PHAsset *asset, NSUInteger index, BOOL *stop) {
-                    resolved[asset.localIdentifier] = asset;
-                    NSString *name =
-                        [PHAssetResource assetResourcesForAsset:asset].firstObject.originalFilename;
-                    if (name.length)
-                        filenames[asset.localIdentifier] = name;
-                }];
-            }
-            assets = resolved;
-            names = filenames;
+        NSDictionary *assets = cachedAssets, *names = cachedNames, *reasons = cachedReasons;
+        BOOL lookedUp = reloadAssets || ![previousIDs isEqual:identifiers];
+        if (lookedUp) {
+            NSDictionary *lookup = GSLookupProtectedPhotos(identifiers);
+            assets = lookup[@"assets"];
+            names = lookup[@"names"];
+            reasons = lookup[@"reasons"];
+            [GSLocalPhotoProtectionStore() recordPhotoLookup:lookup[@"report"]];
         }
         dispatch_async(dispatch_get_main_queue(), ^{
             GSProtectedPhotosController *controller = weakSelf;
@@ -214,8 +239,14 @@
             [controller.refreshControl endRefreshing];
             if (!controller.active || generation != controller.generation ||
                 [controller isInteracting]) {
-                controller.needsAssetRefresh = controller.needsAssetRefresh || reloadAssets;
+                controller.needsAssetRefresh = controller.needsAssetRefresh || lookedUp;
                 return;
+            }
+            controller.lookupReasons = reasons;
+            if (lookedUp) {
+                controller.assetGeneration++;
+                [controller.previewReasons removeAllObjects];
+                [controller.previews removeAllObjects];
             }
             if (!complete) {
                 controller.refreshError =
@@ -226,6 +257,7 @@
                 controller.protectedIDs = [NSSet setWithArray:protected];
                 controller.assets = assets;
                 controller.names = names;
+                [controller.selected intersectSet:[NSSet setWithArray:assets.allKeys]];
                 [controller redraw];
                 [controller updateEmptyState];
                 [controller updateSelection];
@@ -242,7 +274,7 @@
                     controller.needsAssetRefresh = YES;
                 }
             NSSet *protectedIDs = [NSSet setWithArray:protected];
-            BOOL changed = ![controller.identifiers isEqual:identifiers] ||
+            BOOL changed = lookedUp || ![controller.identifiers isEqual:identifiers] ||
                            ![controller.jobs isEqual:jobs] || ![controller.assets isEqual:assets] ||
                            ![controller.protectedIDs isEqual:protectedIDs] ||
                            ![controller.conditions isEqual:conditions] ||
@@ -263,6 +295,7 @@
                         [submitted[identifier] isEqual:jobs[identifier][@"id"]])
                         [controller.submitted removeObjectForKey:identifier];
             NSMutableSet *selectable = [protectedIDs mutableCopy];
+            [selectable intersectSet:[NSSet setWithArray:assets.allKeys]];
             for (NSString *identifier in jobs)
                 if ([jobs[identifier][@"state"] isEqual:@"cancelled"] && assets[identifier])
                     [selectable addObject:identifier];
@@ -338,12 +371,36 @@
         return nil;
     return self.jobs[identifier];
 }
+- (NSString *)detailForIdentifier:(NSString *)identifier {
+    PHAsset *asset = self.assets[identifier];
+    NSDictionary *job = [self jobForIdentifier:identifier];
+    NSString *preparing = self.preparation[identifier];
+    NSString *state = preparing ? ([preparing isEqual:@"preparing"]
+                                       ? GSL(@"Preparing")
+                                       : GSL(@"Preparation failed. Tap to try again."))
+                      : job ? GSProtectedPhotoUploadPresentation(job, self.conditions)[@"detail"]
+                      : self.submitted[identifier] ? GSL(@"Checking status")
+                      : asset                      ? GSL(@"Kept on this iPhone")
+                                                   : nil;
+    NSMutableArray *lines = [NSMutableArray array];
+    if (state.length)
+        [lines addObject:state];
+    if (asset.creationDate)
+        [lines addObject:[NSDateFormatter localizedStringFromDate:asset.creationDate
+                                                        dateStyle:NSDateFormatterMediumStyle
+                                                        timeStyle:NSDateFormatterShortStyle]];
+    if (!asset)
+        [lines addObject:GSProtectedPhotoLookupMessage(self.lookupReasons[identifier])];
+    else if ([self.previewReasons[identifier] isEqual:@"cloud_only"])
+        [lines addObject:GSL(@"Photo found; preview requires an iCloud download.")];
+    else if ([self.previewReasons[identifier] isEqual:@"failed"])
+        [lines addObject:GSL(@"Photo found; preview could not be loaded. Pull down to retry.")];
+    return [lines componentsJoinedByString:@"\n"];
+}
 - (UITableViewCell *)tableView:(UITableView *)tableView cellForRowAtIndexPath:(NSIndexPath *)path {
     GSProtectedPhotoCell *cell = [tableView dequeueReusableCellWithIdentifier:@"protected"
                                                                  forIndexPath:path];
-    if (cell.imageRequest != PHInvalidImageRequestID)
-        [PHImageManager.defaultManager cancelImageRequest:cell.imageRequest];
-    cell.imageRequest = PHInvalidImageRequestID;
+    [cell cancelPreview];
     NSString *identifier = self.identifiers[path.row];
     PHAsset *asset = self.assets[identifier];
     NSDictionary *job = [self jobForIdentifier:identifier];
@@ -364,18 +421,11 @@
     content.text = self.names[identifier] ?: resources.firstObject[@"name"] ?:
         (asset ? (asset.mediaType == PHAssetMediaTypeVideo ? GSL(@"Video") : GSL(@"Photo")) :
             [NSString stringWithFormat:GSL(@"Photo unavailable (%lu)"), (unsigned long)path.row + 1]);
-    NSString *date = asset.creationDate
-                         ? [NSDateFormatter localizedStringFromDate:asset.creationDate
-                                                          dateStyle:NSDateFormatterMediumStyle
-                                                          timeStyle:NSDateFormatterShortStyle]
-                         : GSL(@"Preview unavailable");
     NSDictionary *presentation =
         job ? GSProtectedPhotoUploadPresentation(job, self.conditions) : nil;
     if (preparing)
         presentation = nil;
-    NSString *stateText = preparing ? ([preparing isEqual:@"preparing"] ? GSL(@"Preparing") : GSL(@"Preparation failed. Tap to try again.")) :
-        presentation[@"detail"] ?: (self.submitted[identifier] ? GSL(@"Checking status") : asset ? GSL(@"Kept on this iPhone") : GSL(@"Local photo not accessible"));
-    content.secondaryText = [NSString stringWithFormat:@"%@\n%@", stateText, date];
+    content.secondaryText = [self detailForIdentifier:identifier];
     // Match upload history status icons while retaining the local thumbnail.
     NSString *symbol =
         presentation[@"icon"]
@@ -397,7 +447,8 @@
     [title appendAttributedString:[[NSAttributedString alloc]
                                       initWithString:[@"  " stringByAppendingString:content.text]]];
     content.attributedText = title;
-    content.image = [UIImage systemImageNamed:asset ? @"photo" : @"photo.badge.exclamationmark"]
+    UIImage *cached = asset ? [self.previews objectForKey:identifier] : nil;
+    content.image = cached ?: [UIImage systemImageNamed:asset ? @"photo" : @"photo.badge.exclamationmark"]
                         ?: [UIImage systemImageNamed:@"photo"];
     cell.contentConfiguration = content;
     if ([self.selected containsObject:identifier])
@@ -406,11 +457,15 @@
                          scrollPosition:UITableViewScrollPositionNone];
     else
         [tableView deselectRowAtIndexPath:path animated:NO];
-    if (asset) {
+    if (asset && !cached && !self.previewReasons[identifier]) {
         PHImageRequestOptions *options = [PHImageRequestOptions new];
         options.networkAccessAllowed = NO;
         options.deliveryMode = PHImageRequestOptionsDeliveryModeOpportunistic;
         __weak GSProtectedPhotoCell *weakCell = cell;
+        __weak GSProtectedPhotosController *weakSelf = self;
+        NSUInteger assetGeneration = self.assetGeneration;
+        GSProtectedPreviewRequest *request = [GSProtectedPreviewRequest new];
+        cell.previewRequest = request;
         cell.imageRequest = [PHImageManager.defaultManager
             requestImageForAsset:asset
                       targetSize:CGSizeMake(168, 168)
@@ -419,11 +474,36 @@
                    resultHandler:^(UIImage *image, NSDictionary *info) {
                        dispatch_async(dispatch_get_main_queue(), ^{
                            GSProtectedPhotoCell *visible = weakCell;
-                           if (!image || ![visible.representedIdentifier isEqual:identifier])
+                           GSProtectedPhotosController *controller = weakSelf;
+                           if (!controller || visible.previewRequest != request ||
+                               assetGeneration != controller.assetGeneration ||
+                               ![visible.representedIdentifier isEqual:identifier] ||
+                               [info[PHImageCancelledKey] boolValue]) {
+                               [request finish:@"cancelled"];
                                return;
+                           }
+                           if (image) {
+                               [request finish:@"available"];
+                               [controller.previews setObject:image forKey:identifier];
+                               // A degraded image is already useful. A later empty result
+                               // must not replace it with an unavailable-preview warning.
+                               [controller.previewReasons removeObjectForKey:identifier];
+                           } else {
+                               if ([controller.previews objectForKey:identifier] ||
+                                   ([info[PHImageResultIsDegradedKey] boolValue] &&
+                                    !info[PHImageErrorKey]))
+                                   return;
+                               NSString *outcome = [info[PHImageResultIsInCloudKey] boolValue]
+                                                       ? @"cloud_only"
+                                                       : @"failed";
+                               [request finish:outcome];
+                               controller.previewReasons[identifier] = outcome;
+                           }
                            UIListContentConfiguration *updated =
                                [(id)visible.contentConfiguration copy];
-                           updated.image = image;
+                           if (image)
+                               updated.image = image;
+                           updated.secondaryText = [controller detailForIdentifier:identifier];
                            visible.contentConfiguration = updated;
                        });
                    }];

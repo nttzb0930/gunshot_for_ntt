@@ -1,5 +1,19 @@
 #import <Foundation/Foundation.h>
 @class PHFetchResult;
+typedef NS_ENUM(NSInteger, PHAuthorizationStatus) {
+    PHAuthorizationStatusNotDetermined = 0,
+    PHAuthorizationStatusRestricted = 1,
+    PHAuthorizationStatusDenied = 2,
+    PHAuthorizationStatusAuthorized = 3,
+    PHAuthorizationStatusLimited = 4
+};
+typedef NS_ENUM(NSInteger, PHAccessLevel) { PHAccessLevelReadWrite = 2 };
+@interface PHPhotoLibrary : NSObject
++ (PHAuthorizationStatus)authorizationStatusForAccessLevel:(PHAccessLevel)level;
+@end
+@interface PHFetchOptions : NSObject
+@property (nonatomic) BOOL includeHiddenAssets;
+@end
 typedef NS_ENUM(NSInteger, PHAssetMediaType) {
     PHAssetMediaTypeUnknown = 0,
     PHAssetMediaTypeImage = 1,

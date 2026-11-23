@@ -39,6 +39,57 @@ int main(void) {
         store = [[GSLocalPhotoProtection alloc] initWithURL:file];
         assert(![store contains:@"a"] && [store contains:@"b"]);
 
+        // Diagnostic writes are in-memory and cannot remove saved protection.
+        NSData *saved = [NSData dataWithContentsOfURL:file];
+        [store recordPhotoLookup:@{
+            @"authorization" : @"authorized",
+            @"queryState" : @"succeeded",
+            @"error" : @"",
+            @"requested" : @2,
+            @"resolved" : @1,
+            @"notReturned" : @1,
+            @"queryFailed" : @(-1),
+            @"metadataFailures" : @"private-photo.jpg",
+            @"includeHiddenAssets" : @YES,
+            @"localIDs" : @[ @"private-local-id" ]
+        }];
+        NSDictionary *lookup = store.diagnostics[@"photoLookup"];
+        assert([lookup[@"authorization"] isEqual:@"authorized"] &&
+               [lookup[@"requested"] intValue] == 2);
+        assert([lookup[@"resolved"] intValue] == 1 && [lookup[@"notReturned"] intValue] == 1);
+        assert([lookup[@"queryFailed"] intValue] == 0 &&
+               [lookup[@"metadataFailures"] intValue] == 0);
+        assert([lookup[@"includeHiddenAssets"] boolValue] && !lookup[@"localIDs"]);
+        NSDictionary *earlier = store.diagnostics;
+        [store recordPhotoLookup:@{
+            @"authorization" : @"private-token",
+            @"queryState" : @"private-path",
+            @"error" : @"private-exception-text"
+        }];
+        assert([store.diagnostics[@"photoLookup"][@"authorization"] isEqual:@"unknown"]);
+        assert([store.diagnostics[@"photoLookup"][@"queryState"] isEqual:@"failed"]);
+        assert([store.diagnostics[@"photoLookup"][@"error"] isEqual:@"unexpected_result"]);
+        assert([earlier[@"photoLookup"][@"authorization"] isEqual:@"authorized"]);
+        for (NSString *outcome in @[
+                 @"requested", @"available", @"cloud_only", @"failed", @"cancelled",
+                 @"private-preview-id"
+             ])
+            [store recordPreviewResult:outcome];
+        NSDictionary *previews = store.diagnostics[@"previewThisLaunch"];
+        assert(previews.count == 5 && [previews[@"requested"] intValue] == 1);
+        NSString *json =
+            [[NSString alloc] initWithData:[NSJSONSerialization dataWithJSONObject:store.diagnostics
+                                                                           options:0
+                                                                             error:nil]
+                                  encoding:NSUTF8StringEncoding];
+        assert(![json containsString:@"private-"]);
+        assert(store.count == 1 && [store contains:@"b"] &&
+               [[NSData dataWithContentsOfURL:file] isEqual:saved]);
+        GSLocalPhotoProtection *reopened = [[GSLocalPhotoProtection alloc] initWithURL:file];
+        assert([reopened contains:@"b"] &&
+               [reopened.diagnostics[@"photoLookup"][@"queryState"] isEqual:@"not_checked"]);
+        assert([reopened.diagnostics[@"previewThisLaunch"] count] == 0);
+
         NSURL *invalidParent = [root URLByAppendingPathComponent:@"not-a-directory"];
         assert([[@"file" dataUsingEncoding:NSUTF8StringEncoding] writeToURL:invalidParent
                                                                  atomically:YES]);

@@ -12,6 +12,9 @@
 // Explicit user action: permits future backup/deletion; never enqueues an upload.
 - (BOOL)allowBackupForIdentifiers:(NSArray<NSString *> *)identifiers error:(NSError **)error;
 - (void)recordBlockedUpload;
+- (void)recordPhotoLookup:(NSDictionary *)report;
+// Session attempt counters only; accepts fixed outcome codes, never photo data.
+- (void)recordPreviewResult:(NSString *)outcome;
 @property (nonatomic, readonly, copy) NSArray<NSString *> *protectedIdentifiers;
 // Redacted session counters; identifiers are intentionally excluded.
 @property (nonatomic, readonly, copy) NSDictionary *diagnostics;

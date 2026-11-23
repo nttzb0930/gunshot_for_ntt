@@ -290,5 +290,14 @@
   "Back up selected photos again?": "Back up selected photos again?",
   "The selected photos will be unprotected and queued using the current account, upload quality, and album destination. Progress and results appear here.": "The selected photos will be unprotected and queued using the current account, upload quality, and album destination. Progress and results appear here.",
   "Reconnect to Google Photos before backing up again.": "Reconnect to Google Photos before backing up again.",
-  "Retry this upload?": "Retry this upload?"
+  "Retry this upload?": "Retry this upload?",
+  "Photo access is not granted. Check Photos permission in Settings.": "Photo access is not granted. Check Photos permission in Settings.",
+  "Photo access is restricted by iOS.": "Photo access is restricted by iOS.",
+  "Limited Photos access: this ID was not returned. Check the selected photos in Settings.": "Limited Photos access: this ID was not returned. Check the selected photos in Settings.",
+  "Full Photos access: no photo was returned for the saved ID. This does not confirm deletion.": "Full Photos access: no photo was returned for the saved ID. This does not confirm deletion.",
+  "Photos permission changed during lookup. Pull down to refresh.": "Photos permission changed during lookup. Pull down to refresh.",
+  "Could not determine Photos permission. Pull down to retry.": "Could not determine Photos permission. Pull down to retry.",
+  "Photo lookup failed. Pull down to retry. Protection is unchanged.": "Photo lookup failed. Pull down to retry. Protection is unchanged.",
+  "Photo found; preview requires an iCloud download.": "Photo found; preview requires an iCloud download.",
+  "Photo found; preview could not be loaded. Pull down to retry.": "Photo found; preview could not be loaded. Pull down to retry."
 }
