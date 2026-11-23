@@ -107,6 +107,13 @@ store health, protected count, unresolved selections and blocked local deletions
 command phase. `executeHookActive` checks whether the installed method still points
 to the hook. `choicesShown` counts completed presentations, and `lastOutcome`
 reports presentation/account failures without identifying the selected photos.
+`lastResolution` distinguishes inaccessible local assets, unavailable store lookups
+and other unresolved selections. `nativeLocalResult` and `nativeExecuteResult`
+record each phase's pending/succeeded/failed/cancelled status. Failures include only
+the numeric error code and a recognized system error domain (otherwise `other`),
+never messages, paths, userInfo, account IDs or media IDs. `lastOutcome` also marks
+hook validation refusals before a native phase starts. A native success records
+the promise result, not independent proof that the item disappeared from the UI.
 The existing backup report counts `cloudDeletedAssetBlocked`. Neither section
 includes local identities, photo contents or credentials.
 

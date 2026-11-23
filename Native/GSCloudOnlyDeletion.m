@@ -35,6 +35,8 @@ static NSUInteger GSBlockedLocalDeletes;
 static NSUInteger GSUnresolvedSelections;
 static NSUInteger GSDeleteIntercepted, GSLocalPhaseIntercepted, GSDeleteChoicesShown;
 static NSString *GSDeleteLastOutcome = @"not_observed";
+static NSString *GSDeleteLastResolution = @"not_observed";
+static NSDictionary *GSDeleteNativeLocalResult, *GSDeleteNativeExecuteResult;
 static NSString *GSDeleteAvailability = @"not_installed";
 
 static void GSDeleteReplace(Class cls, SEL selector, IMP replacement) {
@@ -80,6 +82,12 @@ static BOOL GSDeleteAddLocal(id local, NSMutableSet *identifiers) {
 }
 // Resolve every selected item before offering the cloud-only choice. Unknown or
 // grouped shapes fail closed; no guessing about native deletionType enum values.
+static NSDictionary *GSDeleteUnresolved(NSString *reason) {
+    @synchronized(GSLocalPhotoProtectionStore()) {
+        GSDeleteLastResolution = reason;
+    }
+    return nil;
+}
 static NSDictionary *GSDeleteTargets(id command) {
     NSArray *items = GSDeleteArray(GSPhotosGetObject(command, @"mediaItems"));
     id source = GSPhotosGetObject(command, @"dataSource");
@@ -87,7 +95,7 @@ static NSDictionary *GSDeleteTargets(id command) {
         items = GSDeleteArray(((id(*)(id, SEL, id))objc_msgSend)(
             source, NSSelectorFromString(@"expandedMediaItemArray:"), items));
     if (!items.count || items.count > 500)
-        return nil;
+        return GSDeleteUnresolved(@"selection_unavailable");
     NSMutableSet *localIDs = [NSMutableSet set];
     BOOL allBackedUp = YES;
     BOOL allLocalLookupsComplete = YES;
@@ -101,15 +109,15 @@ static NSDictionary *GSDeleteTargets(id command) {
         NSArray *ids = GSDeleteArray(GSPhotosGetObject(strategy, @"localAssetIDs"));
         NSArray *keys = GSDeleteArray(GSPhotosGetObject(strategy, @"mediaKeys"));
         if (!strategy || !ids || !keys)
-            return nil;
+            return GSDeleteUnresolved(@"strategy_unavailable");
         for (id key in keys)
             if (![key isKindOfClass:NSString.class] || ![key length])
-                return nil;
+                return GSDeleteUnresolved(@"invalid_cloud_key");
         id local = GSPhotosGetObject(item, @"localAsset");
         if (!local && GSPhotosObjectHasMethod(item, @"phAsset", "@16@0:8"))
             local = item;
         if (local && !GSDeleteAddLocal(local, localIDs))
-            return nil;
+            return GSDeleteUnresolved(@"local_asset_unavailable");
         id mediaKey = GSPhotosGetObject(local, @"mediaKey");
         BOOL backedUp =
             keys.count > 0 || ([mediaKey isKindOfClass:NSString.class] && [mediaKey length]);
@@ -120,17 +128,17 @@ static NSDictionary *GSDeleteTargets(id command) {
                                          @"localAssetsForLocalDedupKey:", "@24@0:8@16") ||
                 !GSPhotosObjectHasMethod(storeResult,
                                          @"serverPhotosForLocalDedupKey:", "@24@0:8@16"))
-                return nil;
+                return GSDeleteUnresolved(@"store_lookup_contract_unavailable");
             NSArray *matches = GSDeleteArray(((id(*)(id, SEL, id))objc_msgSend)(
                 storeResult, NSSelectorFromString(@"localAssetsForLocalDedupKey:"), dedup));
             NSArray *serverPhotos = GSDeleteArray(((id(*)(id, SEL, id))objc_msgSend)(
                 storeResult, NSSelectorFromString(@"serverPhotosForLocalDedupKey:"), dedup));
             if (!matches || !serverPhotos)
-                return nil;
+                return GSDeleteUnresolved(@"store_lookup_unavailable");
             localLookupComplete = YES;
             for (id match in matches)
                 if (!GSDeleteAddLocal(match, localIDs))
-                    return nil;
+                    return GSDeleteUnresolved(@"matching_local_asset_unavailable");
             backedUp |= serverPhotos.count > 0;
         }
         allBackedUp &= backedUp;
@@ -138,17 +146,20 @@ static NSDictionary *GSDeleteTargets(id command) {
         for (id identifier in ids) {
             if (![identifier isKindOfClass:NSString.class] || ![identifier length] ||
                 [identifier length] > 1024)
-                return nil;
+                return GSDeleteUnresolved(@"invalid_local_identifier");
             [localIDs addObject:identifier];
         }
     }
     BOOL onlyCloud = !localIDs.count && allBackedUp && allLocalLookupsComplete;
     if ((!localIDs.count && !onlyCloud) || localIDs.count > 500)
-        return nil;
+        return GSDeleteUnresolved(@"no_confirmed_copy");
     NSArray *identifiers = localIDs.allObjects;
     if ([PHAsset fetchAssetsWithLocalIdentifiers:identifiers options:nil].count !=
         identifiers.count)
-        return nil;
+        return GSDeleteUnresolved(@"local_assets_not_accessible");
+    @synchronized(GSLocalPhotoProtectionStore()) {
+        GSDeleteLastResolution = onlyCloud ? @"verified_cloud_only" : @"resolved_local";
+    }
     return
         @{@"localIDs" : identifiers,
           @"allBackedUp" : @(allBackedUp),
@@ -175,6 +186,26 @@ static UIViewController *GSDeletePresenter(void) {
 static void GSDeleteOutcome(NSString *outcome) {
     @synchronized(GSLocalPhotoProtectionStore()) {
         GSDeleteLastOutcome = outcome;
+    }
+}
+static void GSDeleteNativeResult(BOOL localPhase, NSString *status, id failure) {
+    NSMutableDictionary *result = [@{@"status" : status} mutableCopy];
+    if ([failure isKindOfClass:NSError.class]) {
+        NSError *error = failure;
+        result[@"errorCode"] = @(error.code);
+        // Never export error messages/userInfo or arbitrary domains containing identifiers.
+        result[@"errorDomain"] = [@[ NSCocoaErrorDomain, NSURLErrorDomain, @"PHPhotosErrorDomain" ]
+                                     containsObject:error.domain]
+                                     ? error.domain
+                                     : @"other";
+    }
+    @synchronized(GSLocalPhotoProtectionStore()) {
+        if (localPhase)
+            GSDeleteNativeLocalResult = [result copy];
+        else
+            GSDeleteNativeExecuteResult = [result copy];
+        GSDeleteLastOutcome =
+            [NSString stringWithFormat:@"native_%@_%@", localPhase ? @"local" : @"execute", status];
     }
 }
 // Native confirmation dismissal may still be in progress on the next main-queue turn.
@@ -232,11 +263,13 @@ static id GSDeleteLocal(id command, SEL selector);
 static void GSDeleteContinue(id command, GSAuditedDeletePromise *proxy, NSArray *identifiers,
                              BOOL cloudOnly, id accountID, BOOL localPhase) {
     if (cloudOnly && !identifiers.count) {
+        GSDeleteOutcome(@"cloud_selection_unresolved");
         [proxy reject:GSDeleteError(
                           GSL(@"Could not confirm the deletion context. Nothing was deleted."))];
         return;
     }
     if (!GSNativeAccountMatches(accountID)) {
+        GSDeleteOutcome(@"account_mismatch");
         [proxy reject:GSDeleteError(GSL(@"The signed-in account changed. Nothing was deleted."))];
         return;
     }
@@ -245,6 +278,7 @@ static void GSDeleteContinue(id command, GSAuditedDeletePromise *proxy, NSArray 
         if (!current ||
             ![[NSSet setWithArray:identifiers] isEqual:[NSSet setWithArray:current[@"localIDs"]]] ||
             (cloudOnly && ![current[@"allBackedUp"] boolValue])) {
+            GSDeleteOutcome(@"selection_changed");
             [proxy reject:GSDeleteError(GSL(
                               @"Could not confirm the deletion context. Nothing was deleted."))];
             return;
@@ -252,6 +286,7 @@ static void GSDeleteContinue(id command, GSAuditedDeletePromise *proxy, NSArray 
     }
     if (cloudOnly && (!GSNativeRoutingEnabled() || [GSBatchImportSnapshot()[@"active"] boolValue] ||
                       [GSBackupRequestsSnapshot()[@"activeTransfers"] unsignedIntegerValue] > 0)) {
+        GSDeleteOutcome(@"uploads_active");
         [proxy reject:GSDeleteError(GSL(@"Wait for all GoToHP uploads to finish before deleting "
                                         @"only from Google Photos."))];
         return;
@@ -260,6 +295,7 @@ static void GSDeleteContinue(id command, GSAuditedDeletePromise *proxy, NSArray 
     if (identifiers && ![GSLocalPhotoProtectionStore() updateIdentifiers:identifiers
                                                                  protect:cloudOnly
                                                                    error:&error]) {
+        GSDeleteOutcome(@"protection_write_failed");
         [proxy reject:GSDeleteError(
                           GSL(@"Could not save local photo protection. Nothing was deleted."))];
         return;
@@ -273,9 +309,11 @@ static void GSDeleteContinue(id command, GSAuditedDeletePromise *proxy, NSArray 
         OBJC_ASSOCIATION_RETAIN_NONATOMIC);
     // The host calls deleteLocalAssets BEFORE enqueueing execute. Preserve that
     // local promise and let the host enqueue the cloud command in its own order.
+    GSDeleteNativeResult(localPhase, @"pending", nil);
     id result = localPhase ? GSDeleteLocal(command, NSSelectorFromString(@"deleteLocalAssets"))
                            : GSDeleteExecuteOriginal(command, NSSelectorFromString(@"execute"));
     if (![result isKindOfClass:NSClassFromString(@"GPCPromise")]) {
+        GSDeleteNativeResult(localPhase, @"invalid_result", nil);
         [proxy
             reject:GSDeleteError(GSL(
                        @"The deletion result is unknown. Check Google Photos before retrying."))];
@@ -283,14 +321,17 @@ static void GSDeleteContinue(id command, GSAuditedDeletePromise *proxy, NSArray 
     }
     [(GSAuditedDeletePromise *)result
         withMainQueueOnSuccess:^id(id value) {
+            GSDeleteNativeResult(localPhase, @"succeeded", nil);
             [proxy resolve:value ?: NSNull.null];
             return value;
         }
         onFailure:^id(id failure) {
+            GSDeleteNativeResult(localPhase, @"failed", failure);
             [proxy reject:failure];
             return nil;
         }
         onCancel:^id {
+            GSDeleteNativeResult(localPhase, @"cancelled", nil);
             [proxy reject:[NSError errorWithDomain:NSCocoaErrorDomain
                                               code:NSUserCancelledError
                                           userInfo:nil]];
@@ -352,6 +393,7 @@ static id GSDeleteStart(id command, BOOL localPhase) {
                                 BOOL settled = GSDeleteQueueSettled();
                                 dispatch_async(dispatch_get_main_queue(), ^{
                                     if (!settled) {
+                                        GSDeleteOutcome(@"uploads_not_settled");
                                         [proxy
                                             reject:
                                                 GSDeleteError(GSL(
@@ -497,6 +539,9 @@ NSDictionary *GSCloudOnlyDeletionSnapshot(void) {
             @"localPhaseIntercepted" : @(GSLocalPhaseIntercepted),
             @"choicesShown" : @(GSDeleteChoicesShown),
             @"lastOutcome" : GSDeleteLastOutcome,
+            @"lastResolution" : GSDeleteLastResolution,
+            @"nativeLocalResult" : GSDeleteNativeLocalResult ?: @{},
+            @"nativeExecuteResult" : GSDeleteNativeExecuteResult ?: @{},
             @"executeHookActive" :
                 @(GSDeleteInstalled &&
                   method_getImplementation(class_getInstanceMethod(

@@ -9,7 +9,7 @@ static UIViewController *FixturePresenter;
 static NSArray *DeletedAssets;
 static NSUInteger CloudCalls;
 static NSUInteger RestoreCalls, RestoreLocalCalls;
-static BOOL AccountMatches = YES, QueueBusy, FailCloud;
+static BOOL AccountMatches = YES, QueueBusy, FailCloud, FailLocal, MissingLocalAsset;
 static NSString *FixtureVersion = @"7.20.2";
 GSLocalPhotoProtection *GSFixtureSharedStore(void) {
     return FixtureStore;
@@ -81,7 +81,7 @@ NSDictionary *GSRequest(NSDictionary *request, NSError **error) {
 @implementation PHAsset
 + (PHFetchResult *)fetchAssetsWithLocalIdentifiers:(NSArray *)ids options:(id)options {
     PHFetchResult *result = [PHFetchResult new];
-    result.count = ids.count;
+    result.count = MissingLocalAsset ? 0 : ids.count;
     return result;
 }
 @end
@@ -223,6 +223,14 @@ NSDictionary *GSRequest(NSDictionary *request, NSError **error) {
         [result resolve:@"native-restore-local-result"];
         return result;
     }
+    if (FailLocal) {
+        GPCPromise *result = [GPCPromise new];
+        [result
+            reject:[NSError errorWithDomain:@"PHPhotosErrorDomain"
+                                       code:3300
+                                   userInfo:@{NSLocalizedDescriptionKey : @"private-photo-path"}]];
+        return result;
+    }
     NSMutableArray *assets = [NSMutableArray array];
     for (GSFixtureMediaItem *item in self.mediaItems) {
         if (!item.assetID.length)
@@ -353,6 +361,7 @@ int main(int argc, char **argv) {
         GPCPromise *unknownPromise = [unknown execute];
         Choose(2);
         assert(unknownPromise.failure && CloudCalls == 0);
+        assert([GSCloudOnlyDeletionSnapshot()[@"lastResolution"] isEqual:@"selection_unavailable"]);
 
         PHSDeletePhotoCommand *command = Command();
         GPCPromise *proxy = [command execute];
@@ -420,6 +429,10 @@ int main(int argc, char **argv) {
         });
         assert([[(NSError *)proxy.failure domain] isEqual:@"fixture.cloud"]);
         assert(CloudCalls == 3 && DeletedAssets == nil && [FixtureStore contains:@"local-a"]);
+        NSDictionary *nativeFailure = GSCloudOnlyDeletionSnapshot()[@"nativeExecuteResult"];
+        assert([nativeFailure[@"status"] isEqual:@"failed"]);
+        assert([nativeFailure[@"errorCode"] integerValue] == 503);
+        assert([nativeFailure[@"errorDomain"] isEqual:@"other"]);
         FailCloud = NO;
         GSLocalPhotoProtection *savedStore = FixtureStore;
         FixtureStore = [[GSLocalPhotoProtection alloc]
@@ -567,6 +580,25 @@ int main(int argc, char **argv) {
         Choose(((UIAlertController *)FixturePresenter.presentedViewController).actions.count - 1);
         assert(local.failure && !local.value && CloudCalls == callsBeforeCloudOnly + 1);
         assert(DeletedAssets == nil && FixtureStore.count == protectedBeforeRestore);
+
+        // Native local failure must be distinguishable from a hook validation refusal.
+        FailLocal = YES;
+        MissingLocalAsset = YES;
+        command = Command();
+        NSUInteger cloudBeforeFailure = CloudCalls;
+        local = [command deleteLocalAssets];
+        Choose(1);
+        assert(local.failure && !local.value && CloudCalls == cloudBeforeFailure);
+        NSDictionary *localFailure = GSCloudOnlyDeletionSnapshot()[@"nativeLocalResult"];
+        assert([localFailure[@"status"] isEqual:@"failed"]);
+        assert([localFailure[@"errorCode"] integerValue] == 3300);
+        assert([localFailure[@"errorDomain"] isEqual:@"PHPhotosErrorDomain"]);
+        assert([GSCloudOnlyDeletionSnapshot()[@"lastResolution"]
+            isEqual:@"local_assets_not_accessible"]);
+        assert([GSCloudOnlyDeletionSnapshot()[@"lastOutcome"] isEqual:@"native_local_failed"]);
+        assert(![GSCloudOnlyDeletionSnapshot().description containsString:@"private-photo-path"]);
+        FailLocal = NO;
+        MissingLocalAsset = NO;
         [NSFileManager.defaultManager removeItemAtURL:root error:nil];
         NSLog(
             @"PASS synthetic cloud-only choice, cancellation, native promise forwarding, local "
