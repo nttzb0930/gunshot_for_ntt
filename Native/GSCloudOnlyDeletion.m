@@ -54,15 +54,17 @@ static BOOL GSDeleteEnabledHost(void) {
            [[NSBundle.mainBundle objectForInfoDictionaryKey:@"CFBundleShortVersionString"]
                isEqual:@"7.20.2"];
 }
-static BOOL GSDeleteIsRestore(id command) {
-    // In audited 7.20.2, Trash > Restore uses PHSDeletePhotoCommand too:
-    // PHSTrashedPhotosBehaviorImpl.performRestore supplies mutationOperation 2.
-    // Check the scalar getter's ABI before distinguishing this native operation.
+static BOOL GSDeleteUsesNativeConfirmation(id command) {
+    // Audited 7.20.2 reuses this command for restoration (2) and permanent
+    // deletion (16/32). Both Trash > Delete selection and Empty trash pass 16;
+    // the command constructor maps 16 and 32 to the same permanent strategy.
+    // Keep the host confirmation/results and leave local protection unchanged.
     id context = GSPhotosGetObject(command, @"context");
     if (!GSPhotosObjectHasMethod(context, @"mutationOperation", "Q16@0:8"))
         return NO;
-    return ((NSUInteger(*)(id, SEL))objc_msgSend)(context,
-                                                  NSSelectorFromString(@"mutationOperation")) == 2;
+    NSUInteger operation =
+        ((NSUInteger(*)(id, SEL))objc_msgSend)(context, NSSelectorFromString(@"mutationOperation"));
+    return operation == 2 || operation == 16 || operation == 32;
 }
 static NSArray *GSDeleteArray(id value) {
     if ([value isKindOfClass:NSArray.class])
@@ -467,12 +469,12 @@ static id GSDeleteStart(id command, BOOL localPhase) {
     return proxy;
 }
 static id GSDeleteExecute(id command, SEL selector) {
-    if (GSDeleteIsRestore(command))
+    if (GSDeleteUsesNativeConfirmation(command))
         return GSDeleteExecuteOriginal(command, selector);
     return GSDeleteStart(command, NO);
 }
 static id GSDeleteLocal(id command, SEL selector) {
-    if (GSDeleteIsRestore(command))
+    if (GSDeleteUsesNativeConfirmation(command))
         return GSDeleteLocalOriginal(command, selector);
     NSString *choice = objc_getAssociatedObject(command, &GSDeleteChoiceKey);
     if (!choice)

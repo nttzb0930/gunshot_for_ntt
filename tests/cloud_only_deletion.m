@@ -9,6 +9,7 @@ static UIViewController *FixturePresenter;
 static NSArray *DeletedAssets;
 static NSUInteger CloudCalls;
 static NSUInteger RestoreCalls, RestoreLocalCalls;
+static NSUInteger PermanentCalls, PermanentLocalCalls;
 static BOOL AccountMatches = YES, QueueBusy, FailCloud, FailLocal, MissingLocalAsset;
 static NSString *FixtureVersion = @"7.20.2";
 GSLocalPhotoProtection *GSFixtureSharedStore(void) {
@@ -206,6 +207,12 @@ NSDictionary *GSRequest(NSDictionary *request, NSError **error) {
         [result resolve:@"native-restore-result"];
         return result;
     }
+    if (self.context.mutationOperation == 16 || self.context.mutationOperation == 32) {
+        PermanentCalls++;
+        GPCPromise *result = [GPCPromise new];
+        [result resolve:@"native-permanent-result"];
+        return result;
+    }
     CloudCalls++;
     [self deleteLocalAssets];
     assert(self.mediaItems.count == 1); // Temporary masking must not change the cloud selection.
@@ -221,6 +228,12 @@ NSDictionary *GSRequest(NSDictionary *request, NSError **error) {
         RestoreLocalCalls++;
         GPCPromise *result = [GPCPromise new];
         [result resolve:@"native-restore-local-result"];
+        return result;
+    }
+    if (self.context.mutationOperation == 16 || self.context.mutationOperation == 32) {
+        PermanentLocalCalls++;
+        GPCPromise *result = [GPCPromise new];
+        [result resolve:@"native-permanent-local-result"];
         return result;
     }
     if (FailLocal) {
@@ -546,6 +559,50 @@ int main(int argc, char **argv) {
         assert(CloudCalls == cloudBeforeLocalPhase + 2 && DeletedAssets == nil &&
                FixtureStore.count == protectedBeforeRestore);
 
+        // Both audited permanent-delete variants use the host confirmation only.
+        // This includes Trash > Delete selection and Empty trash (operation 16).
+        NSUInteger choicesBeforePermanent = GSDeleteChoicesShown;
+        NSUInteger callsBeforePermanent = CloudCalls;
+        NSUInteger executeBeforePermanent = GSDeleteIntercepted;
+        NSUInteger localBeforePermanent = GSLocalPhaseIntercepted;
+        for (NSNumber *operation in @[ @16, @32 ]) {
+            command = Command();
+            command.context.mutationOperation = operation.unsignedIntegerValue;
+            if (operation.unsignedIntegerValue == 32)
+                command.mediaItems = @[]; // No local resolution is needed for bypass.
+            local = [command deleteLocalAssets];
+            proxy = [command execute];
+            assert([local.value isEqual:@"native-permanent-local-result"] && !local.failure);
+            assert([proxy.value isEqual:@"native-permanent-result"] && !proxy.failure);
+            assert(!objc_getAssociatedObject(command, &GSDeletePromiseKey) &&
+                   !objc_getAssociatedObject(command, &GSDeleteLocalPromiseKey));
+
+            // A cached earlier delete choice must not mask the permanent-delete phase.
+            objc_setAssociatedObject(command, &GSDeleteChoiceKey, @"cloud",
+                                     OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+            local = [command deleteLocalAssets];
+            proxy = [command execute];
+            assert([local.value isEqual:@"native-permanent-local-result"]);
+            assert([proxy.value isEqual:@"native-permanent-result"]);
+        }
+        assert(PermanentCalls == 4 && PermanentLocalCalls == 4);
+        assert(CloudCalls == callsBeforePermanent && DeletedAssets == nil);
+        assert(FixtureStore.count == protectedBeforeRestore);
+        assert(GSDeleteChoicesShown == choicesBeforePermanent &&
+               GSDeleteIntercepted == executeBeforePermanent &&
+               GSLocalPhaseIntercepted == localBeforePermanent);
+        assert(FixturePresenter.presentedViewController == nil);
+
+        // Bypassing the chooser must not bypass the existing PhotoKit protection.
+        PHAsset *protectedAsset = [PHAsset new];
+        protectedAsset.localIdentifier = @"local-a";
+        PHAsset *otherAsset = [PHAsset new];
+        otherAsset.localIdentifier = @"permanent-other";
+        [PHAssetChangeRequest deleteAssets:@[ protectedAsset, otherAsset ]];
+        assert(DeletedAssets.count == 1 && DeletedAssets[0] == otherAsset);
+        assert([FixtureStore contains:@"local-a"]);
+        DeletedAssets = nil;
+
         // A verified cloud-only item needs only the host's existing confirmation.
         NSUInteger choicesBeforeCloudOnly = GSDeleteChoicesShown;
         NSUInteger callsBeforeCloudOnly = CloudCalls;
@@ -600,9 +657,9 @@ int main(int argc, char **argv) {
         FailLocal = NO;
         MissingLocalAsset = NO;
         [NSFileManager.defaultManager removeItemAtURL:root error:nil];
-        NSLog(
-            @"PASS synthetic cloud-only choice, cancellation, native promise forwarding, local "
-            @"protection, sync filtering, modal dismissal, local-first host ordering, "
-            @"queue/account guards, normal deletion, restore and verified cloud-only passthrough");
+        NSLog(@"PASS synthetic cloud-only choice, cancellation, native promise forwarding, local "
+              @"protection, sync filtering, modal dismissal, local-first host ordering, "
+              @"queue/account guards, normal deletion, restore, permanent deletion and verified "
+              @"cloud-only passthrough");
     }
 }

@@ -73,10 +73,13 @@ is retained on the same command so queued cloud execution does not ask again.
 The original local promise result and host queue ordering are preserved. A closing
 confirmation is allowed up to two seconds to dismiss; failure rejects the request
 without automatically continuing native deletion.
-The same command class also handles restoration from Trash. The audited
-`context.mutationOperation == 2` restore operation bypasses the deletion chooser
-at both entry points and forwards the original native result. It does not change
-the persisted local protection or reuse a previous deletion choice.
+The same command class also handles restoration and permanent deletion from Trash.
+Audited `context.mutationOperation` values 2 (restore) and 16/32 (permanent deletion)
+bypass the chooser at both entry points and forward the original native result.
+In 7.20.2, both deleting selected trash items and emptying Trash pass operation 16;
+the command constructor also maps 32 to its permanent-deletion strategy. These
+operations retain the host's confirmation, leave persisted local protection and
+the PhotoKit guard unchanged, and do not reuse a previous deletion choice.
 Selections confirmed to contain only cloud photos use the original native
 confirmation without an additional destination chooser. This requires successful
 local dedup lookups for every item, no local identities and confirmed cloud media.
