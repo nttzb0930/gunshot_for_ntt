@@ -1,6 +1,7 @@
 #import "GSBatchImport.h"
 #import "GSExporter.h"
 #import "../Native/GSNativeAccount.h"
+#import "../Native/GSLocalPhotoProtection.h"
 #import "../Shared/IPCProtocol.h"
 
 @interface GSImportBatch : NSObject
@@ -45,17 +46,19 @@ static NSString *GSCheckBatchAccount(GSImportBatch *batch) {
         return @"service_unavailable";
     return [accounts[@"selected"] isEqual:batch.account] ? nil : @"account_changed";
 }
-BOOL GSStartBatchImport(NSUInteger count, NSString *source, BOOL assets,
-                        GSBatchItemProvider provider, NSString *account, NSString *identity,
-                        GSBatchProgress progress, GSBatchProgress completion) {
+static BOOL GSStartImport(NSUInteger count, NSString *source, BOOL assets,
+                          GSBatchItemProvider provider, NSString *account, NSString *identity,
+                          GSBatchProgress progress, GSBatchProgress completion, BOOL rebackup,
+                          GSBatchItemCompletion itemCompletion) {
     NSCAssert(NSThread.isMainThread, @"Start import on main");
     if (!count || !provider || !account.length)
         return NO;
     GSImportBatch *batch = [GSImportBatch new];
     batch.account = [account copy];
     batch.identity = [identity copy];
-    source =
-        source && [@[ @"picker", @"album", @"share" ] containsObject:source] ? source : @"share";
+    source = source && [@[ @"picker", @"album", @"share", @"rebackup" ] containsObject:source]
+                 ? source
+                 : @"share";
     NSMutableDictionary *state = [@{
         @"active" : @YES,
         @"source" : source,
@@ -111,7 +114,9 @@ BOOL GSStartBatchImport(NSUInteger count, NSString *source, BOOL assets,
                     GSRecordBatch(state);
                     id item = provider(index);
                     NSError *error = nil;
+                    NSString *jobID = nil, *failureCode = nil;
                     if (!item) {
+                        failureCode = @"inaccessible";
                         processed++;
                         failed++;
                         failures[@"inaccessible"] =
@@ -137,7 +142,8 @@ BOOL GSStartBatchImport(NSUInteger count, NSString *source, BOOL assets,
                         else if (assets) {
                             PHAsset *asset = item;
                             date = asset.creationDate;
-                            files = GSExportAsset(asset, directory, &error);
+                            files = rebackup ? GSExportAssetForRebackup(asset, directory, &error)
+                                             : GSExportAsset(asset, directory, &error);
                         } else {
                             NSURL *url = item;
                             scoped = [url startAccessingSecurityScopedResource];
@@ -153,6 +159,7 @@ BOOL GSStartBatchImport(NSUInteger count, NSString *source, BOOL assets,
                             reason = GSCheckBatchAccount(
                                 batch); // Cloud export may outlive sign-in or cancellation.
                         if (!reason && !files) {
+                            failureCode = @"export_failed";
                             if ([error.domain isEqual:NSCocoaErrorDomain] &&
                                 error.code == NSFileWriteOutOfSpaceError)
                                 reason = @"local_storage";
@@ -166,17 +173,54 @@ BOOL GSStartBatchImport(NSUInteger count, NSString *source, BOOL assets,
                         if (!reason && files) {
                             state[@"stage"] = @"queueing";
                             GSRecordBatch(state);
+                            __block BOOL removedProtection = NO;
+                            __block NSString *sealReason = nil;
+                            NSString *localID = rebackup ? ((PHAsset *)item).localIdentifier : nil;
                             NSString *job =
-                                GSImportFiles(files, batch.account, quality, date, &error);
+                                rebackup
+                                    ? GSImportRebackupFiles(
+                                          files, batch.account, quality, date, localID,
+                                          ^BOOL {
+                                              sealReason = GSCheckBatchAccount(batch);
+                                              if (sealReason ||
+                                                  !GSLocalPhotoProtectionStore().healthy)
+                                                  return NO;
+                                              // Persist consent only after all original bytes have
+                                              // reached the non-runnable importing job.
+                                              BOOL protected =
+                                                  [GSLocalPhotoProtectionStore() contains:localID];
+                                              if (protected &&
+                                                  ![GSLocalPhotoProtectionStore()
+                                                      allowBackupForIdentifiers:@[ localID ]
+                                                                          error:nil])
+                                                  return NO;
+                                              removedProtection = protected;
+                                              return YES;
+                                          },
+                                          &error)
+                                    : GSImportFiles(files, batch.account, quality, date, &error);
                             if (job) {
+                                jobID = job;
                                 processed++;
                                 queued++;
-                            } else
-                                reason = @"queue_rejected";
+                            } else {
+                                reason = sealReason ?: @"queue_rejected";
+                                if (removedProtection &&
+                                    ![GSLocalPhotoProtectionStore() updateIdentifiers:@[ localID ]
+                                                                              protect:YES
+                                                                                error:nil])
+                                    reason = @"protection_restore_failed";
+                            }
                         }
                         if (scoped)
                             [item stopAccessingSecurityScopedResource];
                         [NSFileManager.defaultManager removeItemAtURL:directory error:nil];
+                    }
+                    if (itemCompletion) {
+                        NSString *resultCode = failureCode ?: reason;
+                        dispatch_async(dispatch_get_main_queue(), ^{
+                            itemCompletion(index, jobID, resultCode);
+                        });
                     }
                     state[@"processed"] = @(processed);
                     state[@"queued"] = @(queued);
@@ -222,6 +266,19 @@ BOOL GSStartBatchImport(NSUInteger count, NSString *source, BOOL assets,
         }
     });
     return YES;
+}
+BOOL GSStartBatchImport(NSUInteger count, NSString *source, BOOL assets,
+                        GSBatchItemProvider provider, NSString *account, NSString *identity,
+                        GSBatchProgress progress, GSBatchProgress completion) {
+    return GSStartImport(count, source, assets, provider, account, identity, progress, completion,
+                         NO, nil);
+}
+BOOL GSStartProtectedPhotoImport(NSArray<NSString *> *identifiers, NSString *account,
+                                 NSString *identity, GSBatchItemCompletion itemCompletion,
+                                 GSBatchProgress completion) {
+    return GSStartImport(identifiers.count, @"rebackup", YES,
+                         GSPhotoIdentifierProvider(identifiers), account, identity, nil, completion,
+                         YES, itemCompletion);
 }
 GSBatchItemProvider GSPhotoIdentifierProvider(NSArray *identifiers) {
     NSArray *selection = [identifiers copy];

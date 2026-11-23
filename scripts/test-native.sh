@@ -5,6 +5,8 @@ if [[ $(uname -s) != Darwin ]]; then echo "Native fixtures require macOS and Xco
 mkdir -p .build
 clang -fobjc-arc -framework Foundation Native/GSLocalPhotoProtection.m tests/local_photo_protection.m -o .build/local-photo-protection-test
 .build/local-photo-protection-test
+clang -fobjc-arc -framework Foundation UI/GSProtectedPhotoStatus.m tests/protected_photo_status.m -o .build/protected-photo-status-test
+.build/protected-photo-status-test
 clang -fobjc-arc -framework Foundation -Itests/delete-shims Native/GSLocalPhotoProtection.m tests/cloud_only_deletion.m -o .build/cloud-only-deletion-test
 .build/cloud-only-deletion-test
 .build/cloud-only-deletion-test unknown-version
@@ -128,7 +130,7 @@ if [[ ${1:-all} == jailed || ${1:-all} == all ]]; then
     .build/native-account-legacy-test
   done
   # Bulk photo import
-  clang -fobjc-arc -framework Foundation -Itests/native-shims Media/GSBatchImport.m tests/batch_import.m -o .build/batch-import-test
+  clang -fobjc-arc -framework Foundation -Itests/native-shims Media/GSBatchImport.m Native/GSLocalPhotoProtection.m tests/batch_import.m -o .build/batch-import-test
   .build/batch-import-test
   clang -fobjc-arc -framework Foundation -framework UniformTypeIdentifiers -Itests/native-shims Media/GSBatchImport.m Media/GSExporter.m Native/GSLocalPhotoProtection.m tests/exporter_batch.m -o .build/exporter-batch-test
   .build/exporter-batch-test

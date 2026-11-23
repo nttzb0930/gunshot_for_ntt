@@ -280,5 +280,15 @@
   "Delete both copies": "Delete both copies",
   "Delete from iPhone": "Delete from iPhone",
   "Experimental. Deleting only from Google Photos keeps iPhone copies and blocks GoToHP reuploads. Requires GoToHP backup integration and finished uploads. Other devices may still sync deletions.": "Experimental. Deleting only from Google Photos keeps iPhone copies and blocks GoToHP reuploads. Requires GoToHP backup integration and finished uploads. Other devices may still sync deletions.",
-  "Export one report for upload, album, and photo protection issues. Tokens and media are never recorded.": "Export one report for upload, album, and photo protection issues. Tokens and media are never recorded."
+  "Export one report for upload, album, and photo protection issues. Tokens and media are never recorded.": "Export one report for upload, album, and photo protection issues. Tokens and media are never recorded.",
+  "Back up again": "Back up again",
+  "Could not refresh backup status. Pull down to retry.": "Could not refresh backup status. Pull down to retry.",
+  "Select photos to back them up again. Progress and results stay here and in Upload history. Keep the app open while uploading. Unavailable photos keep their protection and are not queued.": "Select photos to back them up again. Progress and results stay here and in Upload history. Keep the app open while uploading. Unavailable photos keep their protection and are not queued.",
+  "Preparation failed. Tap to try again.": "Preparation failed. Tap to try again.",
+  "Kept on this iPhone": "Kept on this iPhone",
+  "Local photo not accessible": "Local photo not accessible",
+  "Back up selected photos again?": "Back up selected photos again?",
+  "The selected photos will be unprotected and queued using the current account, upload quality, and album destination. Progress and results appear here.": "The selected photos will be unprotected and queued using the current account, upload quality, and album destination. Progress and results appear here.",
+  "Reconnect to Google Photos before backing up again.": "Reconnect to Google Photos before backing up again.",
+  "Retry this upload?": "Retry this upload?"
 }

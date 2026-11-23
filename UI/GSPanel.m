@@ -824,7 +824,7 @@ static char GSPanelPresentationKey;
             @"waveform.path.ecg",
             @"square.and.arrow.up",
             @"gearshape",
-            @"photo.badge.checkmark"
+            @"lock.shield"
         ];
         cell.textLabel.text = titles[control];
         cell.imageView.image = [UIImage systemImageNamed:icons[control]];

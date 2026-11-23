@@ -280,5 +280,15 @@
   "Delete both copies": "Xóa cả hai bản",
   "Delete from iPhone": "Xóa trên iPhone",
   "Experimental. Deleting only from Google Photos keeps iPhone copies and blocks GoToHP reuploads. Requires GoToHP backup integration and finished uploads. Other devices may still sync deletions.": "Thử nghiệm. Chỉ xóa trên Google Photos sẽ giữ bản ảnh trên iPhone và chặn GoToHP tải lại. Cần bật tích hợp sao lưu GoToHP và hoàn tất tải lên trước. Các thiết bị khác vẫn có thể đồng bộ xóa ảnh.",
-  "Export one report for upload, album, and photo protection issues. Tokens and media are never recorded.": "Xuất chung báo cáo về tải lên, album và giữ ảnh trên máy. Không ghi token hay nội dung ảnh/video."
+  "Export one report for upload, album, and photo protection issues. Tokens and media are never recorded.": "Xuất chung báo cáo về tải lên, album và giữ ảnh trên máy. Không ghi token hay nội dung ảnh/video.",
+  "Back up again": "Sao lưu lại",
+  "Could not refresh backup status. Pull down to retry.": "Không làm mới được trạng thái sao lưu. Kéo xuống để thử lại.",
+  "Select photos to back them up again. Progress and results stay here and in Upload history. Keep the app open while uploading. Unavailable photos keep their protection and are not queued.": "Chọn ảnh để sao lưu lại. Tiến trình và kết quả được hiển thị tại đây và trong Lịch sử tải lên. Giữ ứng dụng mở khi tải lên. Ảnh không truy cập được vẫn giữ dấu bảo vệ và chưa được đưa vào hàng đợi.",
+  "Preparation failed. Tap to try again.": "Chuẩn bị không thành công. Chạm để chọn thử lại.",
+  "Kept on this iPhone": "Đang giữ trên iPhone này",
+  "Local photo not accessible": "Chưa truy cập được ảnh trên máy",
+  "Back up selected photos again?": "Sao lưu lại các ảnh đã chọn?",
+  "The selected photos will be unprotected and queued using the current account, upload quality, and album destination. Progress and results appear here.": "Các ảnh đã chọn sẽ được gỡ bảo vệ và đưa vào hàng đợi theo tài khoản, chất lượng tải lên và album đích hiện tại. Tiến trình và kết quả sẽ hiển thị tại đây.",
+  "Reconnect to Google Photos before backing up again.": "Kết nối lại Google Photos trước khi sao lưu lại.",
+  "Retry this upload?": "Thử tải lên lại mục này?"
 }

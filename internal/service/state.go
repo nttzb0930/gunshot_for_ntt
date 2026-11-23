@@ -52,6 +52,9 @@ func validateState(s State) error {
 	seen := map[string]bool{}
 	states := map[string]bool{"importing": true, "pending": true, "preparing": true, "uploading": true, "committing": true, "completed": true, "failed": true, "cancelled": true}
 	for _, j := range s.Jobs {
+		if j != nil && !validAssetID(j.RebackupAssetID) {
+			return errors.New("invalid persisted local asset")
+		}
 		if j == nil || !validID(j.ID) || seen[j.ID] || !states[j.State] || !validQuality(j.Quality) || j.Account == "" || len(j.Resources) < 1 || len(j.Resources) > 2 || j.Attempts < 0 {
 			return errors.New("invalid persisted job")
 		}

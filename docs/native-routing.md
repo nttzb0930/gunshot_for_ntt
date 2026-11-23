@@ -107,9 +107,29 @@ It reads an immutable identifier snapshot through `GSLocalPhotoProtection`, load
 available PhotoKit assets on a worker, and requests visible thumbnails without
 network downloads. Inaccessible assets retain a placeholder and their saved
 protection; absence from a fetch is not treated as proof of deletion. Selected
-items can explicitly **Allow backup again**, with confirmation that normal backup
-and deletion behavior resumes. This operation changes only protection state,
-never deletes media or enqueues uploads. A failed write leaves protection intact.
+items can explicitly **Back up again**, using the current account, quality and
+album destination. Originals are exported while protection remains saved; after
+the non-runnable importing job has copied every resource, account/identity and
+consent are checked again before removing protection and sealing the upload.
+Inaccessible assets are not queued or unprotected. Preparation failures retain
+protection; if sealing fails after removal, the worker attempts to restore it.
+This does not delete local media. The device-local consent write and queue seal
+are separate operations; an interrupted import is shown as cancelled and can be
+selected again after relaunch.
+
+The page retains thumbnails, resource filenames, state icons, actual byte progress,
+quality and upload results. It polls the existing queue off main while visible,
+preserves the scroll position and avoids refreshing during gestures. Pending
+jobs show network/Wi-Fi/charging/pause conditions. Failed queued jobs use the
+existing explicit retry action. Completion requires a fresh successful upload
+result, not just all bytes sent. The menu uses a `lock.shield` symbol.
+
+Queue jobs persist a bounded `rebackupAssetID` so this history survives reopening
+the page. It is UI metadata, not an authorization identity, and is excluded from
+diagnostic summaries. Explicit rebackup invalidates old completed/failed local
+fingerprint results for the same content; it can coalesce with an active upload
+instead of falsely reusing a result from before cloud deletion. History cleanup
+removes these upload rows, while saved protection remains independent.
 Do not uninstall the tweak or clear the app's data while relying on protection.
 Other devices, Apple Photos/iCloud operations and other apps are outside its scope.
 File imports, separate copies with new local IDs and explicit retries of previously
@@ -133,7 +153,7 @@ includes local identities, photo contents or credentials.
 The same report includes `cloudOnlyDeletion.protection`: store health, protected
 count, upload-block attempts (native backup and asset export), unprotect attempts,
 successes, failures, last result and numeric error code. Counters cover this launch;
-only protection identities persist. No additional diagnostics screen is added.
+protection identities and queue history persist. No additional diagnostics screen is added.
 
 This is an experimental implementation based on static IPA inspection. Native
 synthetic fixtures cover cancellation, promise forwarding, restoration after a

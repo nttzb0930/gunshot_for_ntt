@@ -280,5 +280,15 @@
   "Delete both copies": "両方のコピーを削除",
   "Delete from iPhone": "iPhone から削除",
   "Experimental. Deleting only from Google Photos keeps iPhone copies and blocks GoToHP reuploads. Requires GoToHP backup integration and finished uploads. Other devices may still sync deletions.": "試験機能。Google フォトのみから削除すると、iPhone 上の写真を保持し、GoToHP による再アップロードを防ぎます。GoToHP バックアップ連携を有効にし、先にアップロードを完了してください。他の端末では削除が同期される場合があります。",
-  "Export one report for upload, album, and photo protection issues. Tokens and media are never recorded.": "アップロード、アルバム、写真保護の問題を1つのレポートにまとめます。トークンやメディアは記録されません。"
+  "Export one report for upload, album, and photo protection issues. Tokens and media are never recorded.": "アップロード、アルバム、写真保護の問題を1つのレポートにまとめます。トークンやメディアは記録されません。",
+  "Back up again": "再バックアップ",
+  "Could not refresh backup status. Pull down to retry.": "バックアップ状態を更新できません。下に引いて再試行してください。",
+  "Select photos to back them up again. Progress and results stay here and in Upload history. Keep the app open while uploading. Unavailable photos keep their protection and are not queued.": "写真を選択して再バックアップします。進行状況と結果はここおよびアップロード履歴に表示されます。アップロード中はアプリを開いたままにしてください。アクセスできない写真の保護は維持され、キューには追加されません。",
+  "Preparation failed. Tap to try again.": "準備に失敗しました。タップして再試行してください。",
+  "Kept on this iPhone": "このiPhoneで保持中",
+  "Local photo not accessible": "端末の写真にアクセスできません",
+  "Back up selected photos again?": "選択した写真を再バックアップしますか？",
+  "The selected photos will be unprotected and queued using the current account, upload quality, and album destination. Progress and results appear here.": "選択した写真の保護を解除し、現在のアカウント、画質、保存先アルバムでキューに追加します。進行状況と結果はここに表示されます。",
+  "Reconnect to Google Photos before backing up again.": "再バックアップする前にGoogleフォトに再接続してください。",
+  "Retry this upload?": "このアップロードを再試行しますか？"
 }

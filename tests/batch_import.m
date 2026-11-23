@@ -1,10 +1,12 @@
 #import "../Media/GSBatchImport.h"
 #import "../Media/GSExporter.h"
+#import "../Native/GSLocalPhotoProtection.h"
 #include <assert.h>
 
 static NSString *Identity = @"identity-A", *Account = @"a@example.com";
 static NSUInteger Queued, Exports, Fetches, MaxFetch, LiveAssets, PeakAssets;
-static BOOL FailExport, FailQueue, SwitchDuringExport, CancelDuringExport, Offline;
+static BOOL FailExport, FailQueue, FailAfterConsent, SwitchDuringExport, CancelDuringExport,
+    Offline;
 static NSString *LastDirectory;
 static BOOL AlbumBatchHeld;
 @interface PHFetchResult ()
@@ -111,6 +113,42 @@ NSString *GSImportFiles(NSArray *files, NSString *account, NSString *quality, NS
         assert([NSFileManager.defaultManager fileExistsAtPath:file.path]);
     return @"job";
 }
+NSArray *GSExportAssetForRebackup(PHAsset *asset, NSURL *directory, NSError **error) {
+    assert([GSLocalPhotoProtectionStore() contains:asset.localIdentifier]);
+    return GSExportAsset(asset, directory, error);
+}
+NSString *GSImportRebackupFiles(NSArray *files, NSString *account, NSString *quality, NSDate *date,
+                                NSString *assetIdentifier, BOOL (^beforeSeal)(void),
+                                NSError **error) {
+    if (FailQueue || !beforeSeal() || FailAfterConsent)
+        return nil;
+    assert(![GSLocalPhotoProtectionStore() contains:assetIdentifier]);
+    return GSImportFiles(files, account, quality, date, error);
+}
+static NSDictionary *RunProtected(NSArray *ids, NSUInteger expectedResults) {
+    __block NSDictionary *done = nil;
+    __block NSUInteger results = 0;
+    assert(GSStartProtectedPhotoImport(
+        ids, @"a@example.com", @"identity-A",
+        ^(NSUInteger index, NSString *jobID, NSString *failureCode) {
+            assert(NSThread.isMainThread && index < ids.count);
+            assert((jobID != nil) != (failureCode != nil));
+            results++;
+        },
+        ^(NSDictionary *state) {
+            done = state;
+        }));
+    NSDate *deadline = [NSDate dateWithTimeIntervalSinceNow:10];
+    while (!done && deadline.timeIntervalSinceNow > 0)
+        [NSRunLoop.currentRunLoop runUntilDate:[NSDate dateWithTimeIntervalSinceNow:0.001]];
+    assert(done && results == expectedResults && !AlbumBatchHeld);
+    NSData *json = [NSJSONSerialization dataWithJSONObject:GSBatchImportSnapshot()
+                                                   options:0
+                                                     error:nil];
+    assert(![[[NSString alloc] initWithData:json encoding:NSUTF8StringEncoding]
+        containsString:@"protected-local-secret"]);
+    return done;
+}
 static NSDictionary *Run(NSArray *ids) {
     __block NSDictionary *done = nil;
     BOOL started = GSStartBatchImport(ids.count, @"picker", YES, GSPhotoIdentifierProvider(ids),
@@ -175,6 +213,32 @@ int main(void) {
         Offline = NO;
         result = Run(@[ @"0", @"1" ]);
         assert(Queued == before + 2 && [result[@"queued"] intValue] == 2);
+        GSLocalPhotoProtection *store = GSLocalPhotoProtectionStore();
+        assert([store updateIdentifiers:@[ @"protected-local-secret", @"missing", @"500" ]
+                                protect:YES
+                                  error:nil]);
+        result = RunProtected(@[ @"protected-local-secret", @"missing" ], 2);
+        assert([result[@"queued"] intValue] == 1 && [result[@"failed"] intValue] == 1);
+        assert(![store contains:@"protected-local-secret"] && [store contains:@"missing"]);
+        FailExport = YES;
+        result = RunProtected(@[ @"500" ], 1);
+        assert([result[@"failed"] intValue] == 1 && [store contains:@"500"]);
+        FailExport = NO;
+        assert([store updateIdentifiers:@[ @"protected-local-secret" ] protect:YES error:nil]);
+        FailAfterConsent = YES;
+        result = RunProtected(@[ @"protected-local-secret" ], 1);
+        assert([result[@"stopReason"] isEqual:@"queue_rejected"] &&
+               [store contains:@"protected-local-secret"]);
+        FailAfterConsent = NO;
+        SwitchDuringExport = YES;
+        result = RunProtected(@[ @"protected-local-secret" ], 1);
+        assert([result[@"stopReason"] isEqual:@"account_changed"] &&
+               [store contains:@"protected-local-secret"]);
+        SwitchDuringExport = NO;
+        Identity = @"identity-A";
+        assert([store updateIdentifiers:@[ @"protected-local-secret", @"missing", @"500" ]
+                                protect:NO
+                                  error:nil]);
         NSLog(@"PASS 2000 selections, bounded PhotoKit pages, missing IDs, individual export "
               @"failure, Live Photo resources, account switch, cancellation, queue/IPC failure, "
               @"retry and private batch diagnostics");

@@ -1,5 +1,6 @@
 #import "../Media/GSBatchImport.h"
 #import "../Media/GSExporter.h"
+#import "../Native/GSLocalPhotoProtection.h"
 #include <assert.h>
 #include <stdatomic.h>
 
@@ -14,6 +15,7 @@ static NSArray *FixtureResources;
 static BOOL RejectAppend;
 static BOOL AlbumBatchHeld;
 static BOOL RunningBatch;
+static NSString *RebackupAsset;
 static NSMutableArray<NSMutableData *> *Received;
 static NSData *OriginalBytes(BOOL movie) {
     NSMutableData *bytes = [NSMutableData dataWithLength:70013];
@@ -110,6 +112,9 @@ NSDictionary *GSRequest(NSDictionary *request, NSError **error) {
         return @{};
     }
     if ([op isEqual:@"begin"]) {
+        RebackupAsset = request[@"rebackupAssetID"];
+        if (RebackupAsset)
+            assert([GSLocalPhotoProtectionStore() contains:RebackupAsset]);
         if (RunningBatch)
             assert(AlbumBatchHeld);
         assert([request[@"quality"] isEqual:@"original"] &&
@@ -124,6 +129,8 @@ NSDictionary *GSRequest(NSDictionary *request, NSError **error) {
         return @{@"id" : @"fixture-job"};
     }
     if ([op isEqual:@"append"]) {
+        if (RebackupAsset)
+            assert([GSLocalPhotoProtectionStore() contains:RebackupAsset]);
         if (RejectAppend) {
             if (error)
                 *error = [NSError errorWithDomain:@"fixture-chunk-failure" code:70 userInfo:nil];
@@ -137,6 +144,8 @@ NSDictionary *GSRequest(NSDictionary *request, NSError **error) {
         return @{};
     }
     if ([op isEqual:@"seal"]) {
+        if (RebackupAsset)
+            assert(![GSLocalPhotoProtectionStore() contains:RebackupAsset]);
         for (NSUInteger i = 0; i < Received.count; i++) {
             BOOL movie = [ExpectedResources[i][@"name"] isEqual:@"original.MOV"];
             assert([Received[i] isEqual:OriginalBytes(movie)]);
@@ -214,6 +223,49 @@ static NSDictionary *Run(void) {
     RunningBatch = NO;
     return done;
 }
+static void CheckRebackup(void) {
+    NSString *identifier = @"protected-exporter-fixture";
+    GSLocalPhotoProtection *store = GSLocalPhotoProtectionStore();
+    assert([store updateIdentifiers:@[ identifier ] protect:YES error:nil]);
+    PHAsset *asset = [PHAsset new];
+    asset.localIdentifier = identifier;
+    asset.mediaType = PHAssetMediaTypeImage;
+    NSURL *directory =
+        [NSURL fileURLWithPath:[NSTemporaryDirectory()
+                                   stringByAppendingPathComponent:NSUUID.UUID.UUIDString]
+                   isDirectory:YES];
+    assert([NSFileManager.defaultManager createDirectoryAtURL:directory
+                                  withIntermediateDirectories:YES
+                                                   attributes:nil
+                                                        error:nil]);
+    assert(!GSExportAsset(asset, directory, nil));
+    NSArray *files = GSExportAssetForRebackup(asset, directory, nil);
+    assert(files.count == 1 && [store contains:identifier]);
+    __block BOOL called = NO;
+    RejectAppend = YES;
+    assert(!GSImportRebackupFiles(
+        files, @"fixture@example.com", @"original", [NSDate dateWithTimeIntervalSince1970:123],
+        identifier,
+        ^BOOL {
+            called = YES;
+            return YES;
+        },
+        nil));
+    assert(!called && [store contains:identifier]);
+    RejectAppend = NO;
+    NSUInteger before = Queued;
+    assert(GSImportRebackupFiles(
+        files, @"fixture@example.com", @"original", [NSDate dateWithTimeIntervalSince1970:123],
+        identifier,
+        ^BOOL {
+            called = YES;
+            assert([store contains:identifier]);
+            return [store allowBackupForIdentifiers:@[ identifier ] error:nil];
+        },
+        nil));
+    assert(called && Queued == before + 1 && ![store contains:identifier]);
+    [NSFileManager.defaultManager removeItemAtURL:directory error:nil];
+}
 int main(void) {
     @autoreleasepool {
         NSDictionary *result = Run();
@@ -248,6 +300,9 @@ int main(void) {
             });
         assert(dispatch_group_wait(group, dispatch_time(DISPATCH_TIME_NOW, 10 * NSEC_PER_SEC)) ==
                0);
+        dispatch_sync(dispatch_get_global_queue(QOS_CLASS_UTILITY, 0), ^{
+            CheckRebackup();
+        });
         assert(atomic_load(&PeakExports) == 1);
         dispatch_group_async(group, dispatch_get_global_queue(QOS_CLASS_UTILITY, 0), ^{
             PHAssetResource *raw =

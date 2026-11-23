@@ -280,5 +280,15 @@
   "Delete both copies": "删除两个副本",
   "Delete from iPhone": "从 iPhone 删除",
   "Experimental. Deleting only from Google Photos keeps iPhone copies and blocks GoToHP reuploads. Requires GoToHP backup integration and finished uploads. Other devices may still sync deletions.": "实验功能。仅从 Google 相册删除会保留 iPhone 上的照片并阻止 GoToHP 重新上传。需要启用 GoToHP 备份集成并先完成上传。其他设备仍可能同步删除操作。",
-  "Export one report for upload, album, and photo protection issues. Tokens and media are never recorded.": "导出包含上传、相册和照片保护问题的统一报告。不记录令牌或媒体内容。"
+  "Export one report for upload, album, and photo protection issues. Tokens and media are never recorded.": "导出包含上传、相册和照片保护问题的统一报告。不记录令牌或媒体内容。",
+  "Back up again": "重新备份",
+  "Could not refresh backup status. Pull down to retry.": "无法刷新备份状态。下拉重试。",
+  "Select photos to back them up again. Progress and results stay here and in Upload history. Keep the app open while uploading. Unavailable photos keep their protection and are not queued.": "选择照片重新备份。进度和结果会显示在此处及上传记录中。上传时请保持应用打开。无法访问的照片将继续受到保护，不会加入队列。",
+  "Preparation failed. Tap to try again.": "准备失败。轻点以重试。",
+  "Kept on this iPhone": "保留在此 iPhone 上",
+  "Local photo not accessible": "无法访问设备上的照片",
+  "Back up selected photos again?": "重新备份所选照片？",
+  "The selected photos will be unprotected and queued using the current account, upload quality, and album destination. Progress and results appear here.": "将取消所选照片的保护，并使用当前账号、上传质量和目标相册加入队列。进度和结果将显示在此处。",
+  "Reconnect to Google Photos before backing up again.": "请先重新连接 Google 相册，再重新备份。",
+  "Retry this upload?": "重试此次上传？"
 }

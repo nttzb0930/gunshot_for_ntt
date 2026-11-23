@@ -11,6 +11,8 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+	"unicode"
+	"unicode/utf8"
 )
 
 func validID(s string) bool {
@@ -23,11 +25,14 @@ func validID(s string) bool {
 func safeName(s string) bool {
 	return len(s) > 0 && len(s) < 240 && s != "." && s != ".." && filepath.Base(s) == s && !strings.ContainsAny(s, "/\\\x00\n\r")
 }
+func validAssetID(s string) bool {
+	return utf8.ValidString(s) && len(s) <= 1024 && !strings.ContainsFunc(s, unicode.IsControl)
+}
 func (e *Engine) begin(r Request, owner string) (any, error) {
 	if unfinishedJobs(e.state.Jobs) >= MaxJobs || len(r.Resources) < 1 || len(r.Resources) > 2 {
 		return nil, errRequest
 	}
-	if !validQuality(r.Quality) || r.Account == "" {
+	if !validQuality(r.Quality) || r.Account == "" || !validAssetID(r.RebackupAssetID) {
 		return nil, errRequest
 	}
 	seen := map[string]bool{}
@@ -48,6 +53,7 @@ func (e *Engine) begin(r Request, owner string) (any, error) {
 		return nil, err
 	}
 	j := &Job{ID: id, Account: r.Account, Quality: r.Quality, Resources: r.Resources, State: "importing", Created: time.Now().Unix(), Timestamp: r.Timestamp, Total: total, Owner: owner}
+	j.RebackupAssetID = r.RebackupAssetID
 	if c := e.state.AlbumConfigs[r.Account]; c != nil && c.Enabled {
 		j.AlbumTargets = []string{c.TargetID}
 	}
@@ -127,13 +133,30 @@ func (e *Engine) seal(j *Job) (any, error) {
 	}
 	fingerprint := hex.EncodeToString(h.Sum(nil))
 	delete(e.importHashes, j.ID)
+	if j.RebackupAssetID != "" {
+		for _, old := range e.state.Jobs {
+			if old.Fingerprint == fingerprint && (old.State == "completed" || old.State == "failed") {
+				// Keep history, but no longer advertise a cloud copy the user deleted.
+				old.Fingerprint = ""
+			}
+		}
+	}
 	for _, old := range e.state.Jobs {
+		// A cloud-only deletion invalidates prior local completion. Explicit
+		// rebackup must get a new server result; active uploads can still coalesce.
+		if j.RebackupAssetID != "" && (old.State == "completed" || old.State == "failed" || old.CancelRequested || (old.RebackupAssetID != "" && old.RebackupAssetID != j.RebackupAssetID)) {
+			continue
+		}
 		// Older builds could mark original completed from a saver hash match.
 		// Do not reuse that unverified completion for a new original request.
 		if j.Quality == "original" && old.State == "completed" && old.OriginalPolicy == 0 {
 			continue
 		}
 		if old.ID != j.ID && old.Fingerprint == fingerprint && old.State != "cancelled" {
+			if j.RebackupAssetID != "" {
+				old.RebackupAssetID = j.RebackupAssetID
+				j.RebackupAssetID = ""
+			}
 			for _, target := range j.AlbumTargets {
 				old.AlbumTargets = appendUnique(old.AlbumTargets, target)
 			}

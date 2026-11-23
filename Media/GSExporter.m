@@ -95,8 +95,9 @@ static NSArray<NSURL *> *GSWriteCurrentResources(PHAsset *asset, NSURL *director
     }
     return files;
 }
-NSArray<NSURL *> *GSExportAsset(PHAsset *asset, NSURL *directory, NSError **error) {
-    if ([GSLocalPhotoProtectionStore() contains:asset.localIdentifier]) {
+static NSArray<NSURL *> *GSExportOriginals(PHAsset *asset, NSURL *directory, BOOL rebackup,
+                                           NSError **error) {
+    if (!rebackup && [GSLocalPhotoProtectionStore() contains:asset.localIdentifier]) {
         [GSLocalPhotoProtectionStore() recordBlockedUpload];
         if (error)
             *error = [NSError
@@ -129,8 +130,15 @@ NSArray<NSURL *> *GSExportAsset(PHAsset *asset, NSURL *directory, NSError **erro
         *error = failure;
     return files;
 }
-NSString *GSImportFiles(NSArray<NSURL *> *files, NSString *account, NSString *quality, NSDate *date,
-                        NSError **error) {
+NSArray<NSURL *> *GSExportAsset(PHAsset *asset, NSURL *directory, NSError **error) {
+    return GSExportOriginals(asset, directory, NO, error);
+}
+NSArray<NSURL *> *GSExportAssetForRebackup(PHAsset *asset, NSURL *directory, NSError **error) {
+    return GSExportOriginals(asset, directory, YES, error);
+}
+static NSString *GSImportResources(NSArray<NSURL *> *files, NSString *account, NSString *quality,
+                                   NSDate *date, NSString *assetIdentifier,
+                                   BOOL (^beforeSeal)(void), NSError **error) {
     NSMutableArray *resources = [NSMutableArray array];
     for (NSURL *u in files) {
         NSDictionary *attrs = [NSFileManager.defaultManager attributesOfItemAtPath:u.path
@@ -139,15 +147,16 @@ NSString *GSImportFiles(NSArray<NSURL *> *files, NSString *account, NSString *qu
             return nil;
         [resources addObject:@{@"name" : u.lastPathComponent, @"size" : attrs[NSFileSize]}];
     }
-    NSDictionary *begin = GSRequest(
-        @{
-            @"op" : @"begin",
-            @"account" : account ?: @"",
-            @"quality" : quality ?: @"original",
-            @"timestamp" : @((long long)(date ?: NSDate.date).timeIntervalSince1970),
-            @"resources" : resources
-        },
-        error);
+    NSMutableDictionary *request = [@{
+        @"op" : @"begin",
+        @"account" : account ?: @"",
+        @"quality" : quality ?: @"original",
+        @"timestamp" : @((long long)(date ?: NSDate.date).timeIntervalSince1970),
+        @"resources" : resources
+    } mutableCopy];
+    if (assetIdentifier.length)
+        request[@"rebackupAssetID"] = assetIdentifier;
+    NSDictionary *begin = GSRequest(request, error);
     NSString *identifier = begin[@"id"];
     if (!identifier)
         return nil;
@@ -187,6 +196,8 @@ NSString *GSImportFiles(NSArray<NSURL *> *files, NSString *account, NSString *qu
                 [f closeAndReturnError:nil];
             }
         }
+        if (beforeSeal && !beforeSeal())
+            return nil;
         NSDictionary *sealed = GSRequest(@{@"op" : @"seal", @"id" : identifier}, &failure);
         success = sealed != nil;
         return sealed[@"id"];
@@ -196,4 +207,15 @@ NSString *GSImportFiles(NSArray<NSURL *> *files, NSString *account, NSString *qu
         if (!success)
             GSRequest(@{@"op" : @"cancel", @"id" : identifier}, nil);
     }
+}
+NSString *GSImportFiles(NSArray<NSURL *> *files, NSString *account, NSString *quality, NSDate *date,
+                        NSError **error) {
+    return GSImportResources(files, account, quality, date, nil, nil, error);
+}
+NSString *GSImportRebackupFiles(NSArray<NSURL *> *files, NSString *account, NSString *quality,
+                                NSDate *date, NSString *assetIdentifier, BOOL (^beforeSeal)(void),
+                                NSError **error) {
+    if (!assetIdentifier.length || !beforeSeal)
+        return nil;
+    return GSImportResources(files, account, quality, date, assetIdentifier, beforeSeal, error);
 }
