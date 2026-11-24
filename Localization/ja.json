@@ -299,5 +299,14 @@
   "Could not determine Photos permission. Pull down to retry.": "写真へのアクセス権限を確認できませんでした。下に引いて再試行してください。",
   "Photo lookup failed. Pull down to retry. Protection is unchanged.": "写真の検索に失敗しました。下に引いて再試行してください。保護は維持されています。",
   "Photo found; preview requires an iCloud download.": "写真が見つかりました。プレビューにはiCloudからのダウンロードが必要です。",
-  "Photo found; preview could not be loaded. Pull down to retry.": "写真は見つかりましたが、プレビューを読み込めません。下に引いて再試行してください。"
+  "Photo found; preview could not be loaded. Pull down to retry.": "写真は見つかりましたが、プレビューを読み込めません。下に引いて再試行してください。",
+  "Checking photo...": "写真を確認中…",
+  "Check a photo still on this iPhone": "iPhoneに残っている写真を確認",
+  "Select the photo that is still in Apple Photos. Only its ID is compared. This does not upload it or change protection.": "Appleの写真アプリに残っている写真を選び、IDを照合します。写真のアップロードや保護の変更は行いません。",
+  "Photo check": "写真の照合",
+  "Photo found. Its ID matches a saved protection entry. Refresh the list to check again.": "写真を読み取れました。IDは保存済みの保護項目と一致します。リストを更新して再確認してください。",
+  "Photo found. Its current ID does not match any saved protection entry. No photos were linked.": "写真を読み取れましたが、現在のIDは保存済みの保護項目と一致しません。写真の関連付けは行っていません。",
+  "The picker returned an ID, but PhotoKit did not return the selected photo.": "選択画面からIDを取得できましたが、PhotoKitでは選んだ写真が見つかりませんでした。",
+  "The picker did not return a photo ID. Protection is unchanged.": "選択画面から写真のIDを取得できませんでした。保護は維持されています。",
+  "Could not check the selected photo. See upload diagnostics for details.": "選んだ写真を確認できませんでした。詳細はアップロード診断を確認してください。"
 }

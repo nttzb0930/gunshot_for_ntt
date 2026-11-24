@@ -12,6 +12,41 @@ static NSString *GSProtectionDiagnosticCode(id value, NSArray *allowed, NSString
     return [value isKindOfClass:NSString.class] && [allowed containsObject:value] ? value
                                                                                   : fallback;
 }
+static NSDictionary *GSSafePhotoLookup(NSDictionary *report) {
+    if (![report isKindOfClass:NSDictionary.class])
+        report = @{};
+    NSMutableDictionary *safe = [NSMutableDictionary dictionary];
+    safe[@"authorization"] = GSProtectionDiagnosticCode(
+        report[@"authorization"],
+        @[ @"unknown", @"not_determined", @"restricted", @"denied", @"authorized", @"limited" ],
+        @"unknown");
+    safe[@"queryState"] = GSProtectionDiagnosticCode(
+        report[@"queryState"],
+        @[
+            @"not_checked", @"not_needed", @"access_blocked", @"succeeded", @"partial_failure",
+            @"failed", @"permission_changed"
+        ],
+        @"failed");
+    safe[@"error"] = GSProtectionDiagnosticCode(
+        report[@"error"],
+        @[
+            @"", @"invalid_identifiers", @"authorization_exception", @"authorization_changed",
+            @"nil_fetch_result", @"fetch_exception", @"unexpected_result"
+        ],
+        @"unexpected_result");
+    for (NSString *key in @[
+             @"requested", @"resolved", @"notReturned", @"permissionBlocked", @"queryFailed",
+             @"queryFailures", @"metadataFailures", @"invalidIdentifiers"
+         ])
+        safe[key] = [report[key] isKindOfClass:NSNumber.class] && [report[key] longLongValue] >= 0
+                        ? @([report[key] unsignedLongLongValue])
+                        : @0;
+    safe[@"includeHiddenAssets"] =
+        @([report[@"includeHiddenAssets"] isKindOfClass:NSNumber.class] &&
+          [report[@"includeHiddenAssets"] boolValue]);
+    return [safe copy];
+}
+
 @implementation GSLocalPhotoProtection {
     NSURL *_url;
     NSSet<NSString *> *_identifiers;
@@ -19,7 +54,7 @@ static NSString *GSProtectionDiagnosticCode(id value, NSArray *allowed, NSString
     NSUInteger _blockedUploads, _unprotectAttempts, _unprotectSucceeded, _unprotectFailed;
     NSString *_lastUnprotectResult;
     NSInteger _lastUnprotectErrorCode;
-    NSDictionary *_photoLookup;
+    NSDictionary *_photoLookup, *_selectionCheck;
     NSMutableDictionary *_previewResults;
 }
 - (instancetype)initWithURL:(NSURL *)url {
@@ -91,44 +126,39 @@ static NSString *GSProtectionDiagnosticCode(id value, NSArray *allowed, NSString
             @"lastUnprotectErrorCode" : @(_lastUnprotectErrorCode),
             @"photoLookup" : _photoLookup
                 ?: @{@"authorization" : @"unknown", @"queryState" : @"not_checked"},
-            @"previewThisLaunch" : [_previewResults copy] ?: @{}
+            @"previewThisLaunch" : [_previewResults copy] ?: @{},
+            @"selectionCheck" : _selectionCheck ?: @{@"outcome" : @"not_checked"}
         };
     }
 }
 - (void)recordPhotoLookup:(NSDictionary *)report {
     if (![report isKindOfClass:NSDictionary.class])
         return;
-    NSMutableDictionary *safe = [NSMutableDictionary dictionary];
-    safe[@"authorization"] = GSProtectionDiagnosticCode(
-        report[@"authorization"],
-        @[ @"unknown", @"not_determined", @"restricted", @"denied", @"authorized", @"limited" ],
-        @"unknown");
-    safe[@"queryState"] = GSProtectionDiagnosticCode(
-        report[@"queryState"],
-        @[
-            @"not_checked", @"not_needed", @"access_blocked", @"succeeded", @"partial_failure",
-            @"failed", @"permission_changed"
-        ],
-        @"failed");
-    safe[@"error"] = GSProtectionDiagnosticCode(
-        report[@"error"],
-        @[
-            @"", @"invalid_identifiers", @"authorization_exception", @"authorization_changed",
-            @"nil_fetch_result", @"fetch_exception", @"unexpected_result"
-        ],
-        @"unexpected_result");
-    for (NSString *key in @[
-             @"requested", @"resolved", @"notReturned", @"permissionBlocked", @"queryFailed",
-             @"queryFailures", @"metadataFailures", @"invalidIdentifiers"
-         ])
-        safe[key] = [report[key] isKindOfClass:NSNumber.class] && [report[key] longLongValue] >= 0
-                        ? @([report[key] unsignedLongLongValue])
-                        : @0;
-    safe[@"includeHiddenAssets"] =
-        @([report[@"includeHiddenAssets"] isKindOfClass:NSNumber.class] &&
-          [report[@"includeHiddenAssets"] boolValue]);
     @synchronized(self) {
-        _photoLookup = [safe copy];
+        _photoLookup = GSSafePhotoLookup(report);
+    }
+}
+- (void)recordPhotoSelectionCheck:(NSDictionary *)report {
+    if (![report isKindOfClass:NSDictionary.class])
+        return;
+    NSDictionary *safe = @{
+        @"outcome" : GSProtectionDiagnosticCode(report[@"outcome"],
+                                                @[
+                                                    @"identifier_unavailable", @"query_failed",
+                                                    @"selected_not_returned", @"matched_protection",
+                                                    @"not_in_protection"
+                                                ],
+                                                @"query_failed"),
+        @"matchesSaved" : @([report[@"matchesSaved"] isKindOfClass:NSNumber.class] &&
+                            [report[@"matchesSaved"] boolValue]),
+        @"savedCount" : [report[@"savedCount"] isKindOfClass:NSNumber.class] &&
+                [report[@"savedCount"] longLongValue] >= 0
+            ? @([report[@"savedCount"] unsignedLongLongValue])
+            : @0,
+        @"lookup" : GSSafePhotoLookup(report[@"lookup"])
+    };
+    @synchronized(self) {
+        _selectionCheck = safe;
     }
 }
 - (void)recordPreviewResult:(NSString *)outcome {

@@ -171,6 +171,18 @@ thumbnail does not make the asset inaccessible for selection. Cached thumbnails
 avoid restarting requests on each upload progress update. Neither diagnostic
 field exports local IDs, filenames, media, or raw exception/error messages.
 
+For a photo confirmed to still exist in Apple Photos, the management page offers
+**Check a photo still on this iPhone** when any saved ID is unresolved. It uses a
+single-selection PHPicker configured with the shared photo library to obtain a
+current local ID, compares it with the saved protection snapshot, and performs a
+read-only PhotoKit lookup. No item-provider media is loaded, no ID is remapped,
+and no upload or protection write is performed. Cancelling leaves the previous
+check unchanged. `cloudOnlyDeletion.protection.selectionCheck` records only the
+fixed outcome, match Boolean, saved count and sanitized selected lookup report.
+An accessible selection whose ID is absent from protection does not by itself
+prove that it is the original asset rather than a reimported copy. This probe
+distinguishes that case from a selected current ID that PhotoKit cannot retrieve.
+
 This is an experimental implementation based on static IPA inspection. Native
 synthetic fixtures cover cancellation, promise forwarding, restoration after a
 protection write, simulated deletion sync, queue/account guards, normal deletion

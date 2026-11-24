@@ -299,5 +299,14 @@
   "Could not determine Photos permission. Pull down to retry.": "无法确定照片访问权限。请下拉重试。",
   "Photo lookup failed. Pull down to retry. Protection is unchanged.": "照片查询失败。请下拉重试。保护状态保持不变。",
   "Photo found; preview requires an iCloud download.": "已找到照片；预览需要从 iCloud 下载。",
-  "Photo found; preview could not be loaded. Pull down to retry.": "已找到照片，但无法加载预览。请下拉重试。"
+  "Photo found; preview could not be loaded. Pull down to retry.": "已找到照片，但无法加载预览。请下拉重试。",
+  "Checking photo...": "正在检查照片…",
+  "Check a photo still on this iPhone": "检查仍在此 iPhone 上的照片",
+  "Select the photo that is still in Apple Photos. Only its ID is compared. This does not upload it or change protection.": "选择仍在 Apple 照片中的照片以比对 ID。此操作不会上传照片或更改保护状态。",
+  "Photo check": "照片检查",
+  "Photo found. Its ID matches a saved protection entry. Refresh the list to check again.": "已读取照片。其 ID 与已保存的保护记录匹配。请刷新列表以重新检查。",
+  "Photo found. Its current ID does not match any saved protection entry. No photos were linked.": "已读取照片，但其当前 ID 与任何已保存的保护记录均不匹配。未关联任何照片。",
+  "The picker returned an ID, but PhotoKit did not return the selected photo.": "选择器返回了 ID，但 PhotoKit 未返回所选照片。",
+  "The picker did not return a photo ID. Protection is unchanged.": "选择器未返回照片 ID。保护状态保持不变。",
+  "Could not check the selected photo. See upload diagnostics for details.": "无法检查所选照片。请在上传诊断中查看详情。"
 }

@@ -9,6 +9,7 @@
 #import "../Shared/GSLocalization.h"
 #import "../Shared/IPCProtocol.h"
 #import <Photos/Photos.h>
+#import <PhotosUI/PhotosUI.h>
 
 @interface GSProtectedPreviewRequest : NSObject
 @property (nonatomic) BOOL finished;
@@ -54,7 +55,7 @@
 }
 @end
 
-@interface GSProtectedPhotosController ()
+@interface GSProtectedPhotosController () <PHPickerViewControllerDelegate>
 @property (nonatomic, copy) NSArray<NSString *> *identifiers;
 @property (nonatomic, copy) NSSet<NSString *> *protectedIDs;
 @property (nonatomic, copy) NSDictionary<NSString *, PHAsset *> *assets;
@@ -69,7 +70,7 @@
 @property (nonatomic, strong) id foregroundObserver;
 @property (nonatomic, strong) NSTimer *timer;
 @property (nonatomic) BOOL active, loading, refreshing, saving, previousToolbarHidden,
-    needsAssetRefresh;
+    needsAssetRefresh, checkingPhoto;
 @property (nonatomic) NSUInteger generation, assetGeneration;
 @end
 
@@ -166,7 +167,8 @@
 }
 - (void)refreshState:(BOOL)reloadAssets {
     self.needsAssetRefresh = self.needsAssetRefresh || reloadAssets;
-    if (!self.active || self.refreshing || self.presentedViewController || [self isInteracting]) {
+    if (!self.active || self.refreshing || self.checkingPhoto || self.presentedViewController ||
+        [self isInteracting]) {
         [self.refreshControl endRefreshing];
         return;
     }
@@ -340,9 +342,10 @@
 }
 - (void)updateSelection {
     self.backupButton.enabled = self.selected.count > 0 && !self.loading && !self.saving &&
-                                GSLocalPhotoProtectionStore().healthy && self.account.length > 0;
+                                !self.checkingPhoto && GSLocalPhotoProtectionStore().healthy &&
+                                self.account.length > 0;
     for (NSIndexPath *path in self.tableView.indexPathsForVisibleRows) {
-        if (path.row >= self.identifiers.count)
+        if (path.section != 0 || path.row >= self.identifiers.count)
             continue;
         NSString *identifier = self.identifiers[path.row];
         UITableViewCell *cell = [self.tableView cellForRowAtIndexPath:path];
@@ -354,9 +357,18 @@
     }
 }
 - (NSInteger)tableView:(UITableView *)tableView numberOfRowsInSection:(NSInteger)section {
-    return self.identifiers.count;
+    return section == 0 ? self.identifiers.count : 1;
+}
+- (NSInteger)numberOfSectionsInTableView:(UITableView *)tableView {
+    for (NSString *identifier in self.identifiers)
+        if (!self.assets[identifier])
+            return 2;
+    return 1;
 }
 - (NSString *)tableView:(UITableView *)tableView titleForFooterInSection:(NSInteger)section {
+    if (section == 1)
+        return GSL(@"Select the photo that is still in Apple Photos. Only its ID is compared. This "
+                   @"does not upload it or change protection.");
     return self.refreshError
                ?: GSL(@"Select photos to back them up again. Progress and results stay here and in "
                       @"Upload history. Keep the app open while uploading. Unavailable photos keep "
@@ -398,6 +410,23 @@
     return [lines componentsJoinedByString:@"\n"];
 }
 - (UITableViewCell *)tableView:(UITableView *)tableView cellForRowAtIndexPath:(NSIndexPath *)path {
+    if (path.section == 1) {
+        UITableViewCell *check =
+            [tableView dequeueReusableCellWithIdentifier:@"photo-check"]
+                ?: [[UITableViewCell alloc] initWithStyle:UITableViewCellStyleDefault
+                                          reuseIdentifier:@"photo-check"];
+        UIListContentConfiguration *content = check.defaultContentConfiguration;
+        content.text = self.checkingPhoto ? GSL(@"Checking photo...")
+                                          : GSL(@"Check a photo still on this iPhone");
+        content.textProperties.numberOfLines = 0;
+        content.textProperties.color = self.checkingPhoto || self.saving
+                                           ? UIColor.secondaryLabelColor
+                                           : UIColor.systemBlueColor;
+        content.image = [UIImage systemImageNamed:@"magnifyingglass"];
+        check.contentConfiguration = content;
+        check.accessoryType = UITableViewCellAccessoryDisclosureIndicator;
+        return check;
+    }
     GSProtectedPhotoCell *cell = [tableView dequeueReusableCellWithIdentifier:@"protected"
                                                                  forIndexPath:path];
     [cell cancelPreview];
@@ -511,7 +540,11 @@
     return cell;
 }
 - (NSIndexPath *)tableView:(UITableView *)tableView willSelectRowAtIndexPath:(NSIndexPath *)path {
-    if (self.loading || self.saving || path.row >= self.identifiers.count)
+    if (path.section == 1)
+        return !self.loading && !self.saving && !self.checkingPhoto && !self.presentedViewController
+                   ? path
+                   : nil;
+    if (self.loading || self.saving || self.checkingPhoto || path.row >= self.identifiers.count)
         return nil;
     NSString *identifier = self.identifiers[path.row];
     NSDictionary *job = [self jobForIdentifier:identifier];
@@ -526,6 +559,11 @@
     return self.loading || self.saving ? nil : path;
 }
 - (void)tableView:(UITableView *)tableView didSelectRowAtIndexPath:(NSIndexPath *)path {
+    if (path.section == 1) {
+        [tableView deselectRowAtIndexPath:path animated:NO];
+        [self checkCurrentPhoto];
+        return;
+    }
     NSString *identifier = self.identifiers[path.row];
     NSDictionary *job = [self jobForIdentifier:identifier];
     if ([job[@"state"] isEqual:@"failed"]) {
@@ -537,12 +575,89 @@
     [self updateSelection];
 }
 - (void)tableView:(UITableView *)tableView didDeselectRowAtIndexPath:(NSIndexPath *)path {
-    if (path.row < self.identifiers.count)
+    if (path.section == 0 && path.row < self.identifiers.count)
         [self.selected removeObject:self.identifiers[path.row]];
     [self updateSelection];
 }
+- (void)checkCurrentPhoto {
+    if (self.saving || self.checkingPhoto || self.presentedViewController)
+        return;
+    // Passing the system library is required for PHPicker assetIdentifier.
+    // Do not ask the item provider to load/export any media.
+    PHPickerConfiguration *configuration =
+        [[PHPickerConfiguration alloc] initWithPhotoLibrary:PHPhotoLibrary.sharedPhotoLibrary];
+    configuration.selectionLimit = 1;
+    PHPickerViewController *picker =
+        [[PHPickerViewController alloc] initWithConfiguration:configuration];
+    picker.delegate = self;
+    self.checkingPhoto = YES;
+    [self updateSelection];
+    [self redraw];
+    [self presentViewController:picker animated:YES completion:nil];
+}
+- (void)picker:(PHPickerViewController *)picker
+    didFinishPicking:(NSArray<PHPickerResult *> *)results {
+    NSString *identifier = [results.firstObject.assetIdentifier copy];
+    __weak GSProtectedPhotosController *weakSelf = self;
+    [self
+        dismissViewControllerAnimated:YES
+                           completion:^{
+                               GSProtectedPhotosController *controller = weakSelf;
+                               if (!results.count) {
+                                   controller.checkingPhoto = NO;
+                                   [controller reloadPhotos];
+                                   return;
+                               }
+                               dispatch_async(dispatch_get_global_queue(QOS_CLASS_UTILITY, 0), ^{
+                                   NSDictionary *report = GSCheckProtectedPhotoSelection(
+                                       identifier,
+                                       GSLocalPhotoProtectionStore().protectedIdentifiers);
+                                   [GSLocalPhotoProtectionStore() recordPhotoSelectionCheck:report];
+                                   dispatch_async(dispatch_get_main_queue(), ^{
+                                       GSProtectedPhotosController *page = weakSelf;
+                                       page.checkingPhoto = NO;
+                                       [page updateSelection];
+                                       [page redraw];
+                                       if (!page.active || page.presentedViewController)
+                                           return;
+                                       NSString *outcome = report[@"outcome"];
+                                       NSString *message =
+                                           [outcome isEqual:@"matched_protection"]
+                                               ? GSL(@"Photo found. Its ID matches a saved "
+                                                     @"protection entry. Refresh the list to check "
+                                                     @"again.")
+                                           : [outcome isEqual:@"not_in_protection"]
+                                               ? GSL(@"Photo found. Its current ID does not match "
+                                                     @"any saved protection entry. No photos were "
+                                                     @"linked.")
+                                           : [outcome isEqual:@"selected_not_returned"]
+                                               ? GSL(@"The picker returned an ID, but PhotoKit did "
+                                                     @"not return the selected photo.")
+                                           : [outcome isEqual:@"identifier_unavailable"]
+                                               ? GSL(@"The picker did not return a photo ID. "
+                                                     @"Protection is unchanged.")
+                                               : GSL(@"Could not check the selected photo. See "
+                                                     @"upload diagnostics for details.");
+                                       UIAlertController *alert = [UIAlertController
+                                           alertControllerWithTitle:GSL(@"Photo check")
+                                                            message:message
+                                                     preferredStyle:UIAlertControllerStyleAlert];
+                                       [alert
+                                           addAction:[UIAlertAction
+                                                         actionWithTitle:GSL(@"Done")
+                                                                   style:UIAlertActionStyleDefault
+                                                                 handler:^(UIAlertAction *action) {
+                                                                     [weakSelf reloadPhotos];
+                                                                 }]];
+                                       [page presentViewController:alert
+                                                          animated:YES
+                                                        completion:nil];
+                                   });
+                               });
+                           }];
+}
 - (void)confirmBackup {
-    if (self.saving || !self.selected.count || self.presentedViewController)
+    if (self.saving || self.checkingPhoto || !self.selected.count || self.presentedViewController)
         return;
     if ([GSBatchImportSnapshot()[@"active"] boolValue]) {
         self.refreshError = GSL(@"Wait for the operation to finish, then retry.");

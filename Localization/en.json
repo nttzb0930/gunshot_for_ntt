@@ -299,5 +299,14 @@
   "Could not determine Photos permission. Pull down to retry.": "Could not determine Photos permission. Pull down to retry.",
   "Photo lookup failed. Pull down to retry. Protection is unchanged.": "Photo lookup failed. Pull down to retry. Protection is unchanged.",
   "Photo found; preview requires an iCloud download.": "Photo found; preview requires an iCloud download.",
-  "Photo found; preview could not be loaded. Pull down to retry.": "Photo found; preview could not be loaded. Pull down to retry."
+  "Photo found; preview could not be loaded. Pull down to retry.": "Photo found; preview could not be loaded. Pull down to retry.",
+  "Checking photo...": "Checking photo...",
+  "Check a photo still on this iPhone": "Check a photo still on this iPhone",
+  "Select the photo that is still in Apple Photos. Only its ID is compared. This does not upload it or change protection.": "Select the photo that is still in Apple Photos. Only its ID is compared. This does not upload it or change protection.",
+  "Photo check": "Photo check",
+  "Photo found. Its ID matches a saved protection entry. Refresh the list to check again.": "Photo found. Its ID matches a saved protection entry. Refresh the list to check again.",
+  "Photo found. Its current ID does not match any saved protection entry. No photos were linked.": "Photo found. Its current ID does not match any saved protection entry. No photos were linked.",
+  "The picker returned an ID, but PhotoKit did not return the selected photo.": "The picker returned an ID, but PhotoKit did not return the selected photo.",
+  "The picker did not return a photo ID. Protection is unchanged.": "The picker did not return a photo ID. Protection is unchanged.",
+  "Could not check the selected photo. See upload diagnostics for details.": "Could not check the selected photo. See upload diagnostics for details."
 }

@@ -86,6 +86,22 @@ static NSDictionary *Lookup(NSArray *identifiers) {
     assert(![json containsString:@"private-"] && ![json containsString:@".jpg"]);
     return result;
 }
+static NSDictionary *CheckSelection(NSString *identifier, NSArray *saved) {
+    __block NSDictionary *result;
+    dispatch_semaphore_t done = dispatch_semaphore_create(0);
+    dispatch_async(dispatch_get_global_queue(QOS_CLASS_UTILITY, 0), ^{
+        result = GSCheckProtectedPhotoSelection(identifier, saved);
+        dispatch_semaphore_signal(done);
+    });
+    assert(dispatch_semaphore_wait(done, dispatch_time(DISPATCH_TIME_NOW, 5 * NSEC_PER_SEC)) == 0);
+    NSString *json = [[NSString alloc] initWithData:[NSJSONSerialization dataWithJSONObject:result
+                                                                                    options:0
+                                                                                      error:nil]
+                                           encoding:NSUTF8StringEncoding];
+    assert(![json containsString:@"private-"] && ![json containsString:@".jpg"]);
+    return result;
+}
+
 int main(void) {
     @autoreleasepool {
         NSDictionary *result = Lookup(@[ @"private-a", @"private-missing", @"private-a" ]);
@@ -162,6 +178,24 @@ int main(void) {
                    [result[@"assets"] count] == 0);
         }
         FailAuthorizationRead = 0;
+        NSDictionary *selection = CheckSelection(@"private-a", @[ @"private-missing" ]);
+        assert([selection[@"outcome"] isEqual:@"not_in_protection"] &&
+               ![selection[@"matchesSaved"] boolValue]);
+        assert([selection[@"lookup"][@"resolved"] intValue] == 1 &&
+               [selection[@"savedCount"] intValue] == 1);
+        selection = CheckSelection(@"private-a", @[ @"private-a" ]);
+        assert([selection[@"outcome"] isEqual:@"matched_protection"] &&
+               [selection[@"matchesSaved"] boolValue]);
+        NilResult = YES;
+        selection = CheckSelection(@"private-a", @[ @"private-a" ]);
+        assert([selection[@"outcome"] isEqual:@"query_failed"] &&
+               [selection[@"matchesSaved"] boolValue]);
+        NilResult = NO;
+        selection = CheckSelection(@"private-missing", @[]);
+        assert([selection[@"outcome"] isEqual:@"selected_not_returned"]);
+        NSUInteger beforeEmpty = Fetches;
+        selection = CheckSelection(nil, @[ @"private-a" ]);
+        assert([selection[@"outcome"] isEqual:@"identifier_unavailable"] && Fetches == beforeEmpty);
         result = Lookup(@[ @42 ]);
         assert([result[@"report"][@"error"] isEqual:@"invalid_identifiers"]);
         assert(GSProtectedPhotoLookupMessage(@"not_returned").length &&

@@ -194,3 +194,26 @@ NSString *GSProtectedPhotoLookupMessage(NSString *reason) {
         return GSL(@"Could not determine Photos permission. Pull down to retry.");
     return GSL(@"Photo lookup failed. Pull down to retry. Protection is unchanged.");
 }
+NSDictionary *GSCheckProtectedPhotoSelection(NSString *identifier, NSArray<NSString *> *saved) {
+    NSCAssert(!NSThread.isMainThread, @"Check selected photo on a worker");
+    BOOL valid = [identifier isKindOfClass:NSString.class] && identifier.length > 0 &&
+                 identifier.length <= 1024 &&
+                 [identifier rangeOfCharacterFromSet:NSCharacterSet.controlCharacterSet].location ==
+                     NSNotFound;
+    BOOL matches = valid && [saved containsObject:identifier];
+    NSDictionary *lookup =
+        valid ? GSLookupProtectedPhotos(@[ identifier ])[@"report"]
+              : @{@"authorization" : @"unknown", @"queryState" : @"not_checked", @"error" : @""};
+    NSString *state = lookup[@"queryState"];
+    NSString *outcome = !valid                                        ? @"identifier_unavailable"
+                        : ![state isEqual:@"succeeded"]               ? @"query_failed"
+                        : ![lookup[@"resolved"] unsignedIntegerValue] ? @"selected_not_returned"
+                        : matches                                     ? @"matched_protection"
+                                                                      : @"not_in_protection";
+    return @{
+        @"outcome" : outcome,
+        @"matchesSaved" : @(matches),
+        @"savedCount" : @(saved.count),
+        @"lookup" : lookup
+    };
+}

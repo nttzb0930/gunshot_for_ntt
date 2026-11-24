@@ -299,5 +299,14 @@
   "Could not determine Photos permission. Pull down to retry.": "Chưa xác định được quyền truy cập ảnh. Kéo xuống để thử lại.",
   "Photo lookup failed. Pull down to retry. Protection is unchanged.": "Tra cứu ảnh thất bại. Kéo xuống để thử lại. Dấu bảo vệ vẫn được giữ.",
   "Photo found; preview requires an iCloud download.": "Đã tìm thấy ảnh; cần tải từ iCloud để xem trước.",
-  "Photo found; preview could not be loaded. Pull down to retry.": "Đã tìm thấy ảnh nhưng chưa tải được hình xem trước. Kéo xuống để thử lại."
+  "Photo found; preview could not be loaded. Pull down to retry.": "Đã tìm thấy ảnh nhưng chưa tải được hình xem trước. Kéo xuống để thử lại.",
+  "Checking photo...": "Đang kiểm tra ảnh…",
+  "Check a photo still on this iPhone": "Kiểm tra ảnh còn trên máy",
+  "Select the photo that is still in Apple Photos. Only its ID is compared. This does not upload it or change protection.": "Chọn đúng ảnh còn trong Ảnh Apple để đối chiếu ID. Thao tác này không tải ảnh lên hay thay đổi dấu bảo vệ.",
+  "Photo check": "Đối chiếu ảnh",
+  "Photo found. Its ID matches a saved protection entry. Refresh the list to check again.": "Đã đọc được ảnh. ID khớp một dấu bảo vệ đã lưu. Làm mới danh sách để kiểm tra lại.",
+  "Photo found. Its current ID does not match any saved protection entry. No photos were linked.": "Đã đọc được ảnh, nhưng ID hiện tại không khớp dấu bảo vệ nào đã lưu. Chưa liên kết hay thay đổi ảnh nào.",
+  "The picker returned an ID, but PhotoKit did not return the selected photo.": "Trình chọn có trả ID, nhưng PhotoKit không tìm thấy ảnh vừa chọn.",
+  "The picker did not return a photo ID. Protection is unchanged.": "Trình chọn không trả ID ảnh. Dấu bảo vệ vẫn được giữ nguyên.",
+  "Could not check the selected photo. See upload diagnostics for details.": "Chưa kiểm tra được ảnh vừa chọn. Xem chi tiết trong chẩn đoán tải lên."
 }

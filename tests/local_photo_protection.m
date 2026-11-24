@@ -89,6 +89,32 @@ int main(void) {
         assert([reopened contains:@"b"] &&
                [reopened.diagnostics[@"photoLookup"][@"queryState"] isEqual:@"not_checked"]);
         assert([reopened.diagnostics[@"previewThisLaunch"] count] == 0);
+        [store recordPhotoSelectionCheck:@{
+            @"outcome" : @"not_in_protection",
+            @"matchesSaved" : @NO,
+            @"savedCount" : @1,
+            @"lookup" : @{
+                @"authorization" : @"authorized",
+                @"queryState" : @"succeeded",
+                @"error" : @"",
+                @"resolved" : @1,
+                @"privateID" : @"private-local-id"
+            },
+            @"identifier" : @"private-local-id"
+        }];
+        assert([store.diagnostics[@"selectionCheck"][@"outcome"] isEqual:@"not_in_protection"]);
+        assert([store.diagnostics[@"selectionCheck"][@"lookup"][@"resolved"] intValue] == 1);
+        assert(![store.diagnostics.description containsString:@"private-"]);
+        [store recordPhotoSelectionCheck:@{
+            @"outcome" : @"private-message",
+            @"savedCount" : @(-1),
+            @"lookup" : @"private-message"
+        }];
+        assert([store.diagnostics[@"selectionCheck"][@"outcome"] isEqual:@"query_failed"]);
+        assert([store.diagnostics[@"selectionCheck"][@"savedCount"] intValue] == 0);
+        assert(![store.diagnostics.description containsString:@"private-"]);
+        assert(store.count == 1 && [store contains:@"b"] &&
+               [[NSData dataWithContentsOfURL:file] isEqual:saved]);
 
         NSURL *invalidParent = [root URLByAppendingPathComponent:@"not-a-directory"];
         assert([[@"file" dataUsingEncoding:NSUTF8StringEncoding] writeToURL:invalidParent

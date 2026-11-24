@@ -13,6 +13,7 @@
 - (BOOL)allowBackupForIdentifiers:(NSArray<NSString *> *)identifiers error:(NSError **)error;
 - (void)recordBlockedUpload;
 - (void)recordPhotoLookup:(NSDictionary *)report;
+- (void)recordPhotoSelectionCheck:(NSDictionary *)report;
 // Session attempt counters only; accepts fixed outcome codes, never photo data.
 - (void)recordPreviewResult:(NSString *)outcome;
 @property (nonatomic, readonly, copy) NSArray<NSString *> *protectedIdentifiers;
