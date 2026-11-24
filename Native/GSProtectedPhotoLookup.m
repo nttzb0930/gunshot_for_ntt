@@ -218,11 +218,14 @@ NSDictionary *GSCheckProtectedPhotoSelection(NSString *identifier, NSArray<NSStr
         @"lookup" : lookup
     };
 }
-NSString *GSForgetUnavailablePhotoProtection(NSString *identifier, GSLocalPhotoProtection *store) {
+NSString *GSForgetUnavailablePhotoProtection(NSString *identifier, GSLocalPhotoProtection *store,
+                                             BOOL (^forgetHistory)(void)) {
     NSCAssert(!NSThread.isMainThread, @"Recheck unavailable protection on a worker");
     if (!store || !store.healthy)
         return @"store_unavailable";
-    if (![store contains:identifier])
+    if (![identifier isKindOfClass:NSString.class] || !identifier.length)
+        return @"lookup_unavailable";
+    if (![store contains:identifier] && !forgetHistory)
         return @"already_removed";
     NSDictionary *lookup = GSLookupProtectedPhotos(@[ identifier ]);
     [store recordPhotoLookup:lookup[@"report"]];
@@ -233,6 +236,9 @@ NSString *GSForgetUnavailablePhotoProtection(NSString *identifier, GSLocalPhotoP
         ![report[@"queryState"] isEqual:@"succeeded"] ||
         ![lookup[@"reasons"][identifier] isEqual:@"not_returned"])
         return @"lookup_unavailable";
+    // Queue persistence comes first: failed/offline cleanup cannot open either guard.
+    if (forgetHistory && !forgetHistory())
+        return @"history_unavailable";
     @synchronized(store) {
         if (!store.healthy)
             return @"store_unavailable";

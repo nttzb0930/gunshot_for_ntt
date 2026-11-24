@@ -315,5 +315,10 @@
   "Could not confirm that this saved ID is unavailable. Protection is unchanged. Refresh and try again.": "Chưa xác nhận được ID đã lưu không còn truy cập được. Dấu bảo vệ vẫn được giữ. Hãy làm mới rồi thử lại.",
   "Could not remove protection": "Chưa gỡ được dấu bảo vệ",
   "The selected photos will be queued using the current account, upload quality, and album destination. Their iPhone copies stay protected from deletion sync. Progress and results appear here.": "Các ảnh đã chọn sẽ được đưa vào hàng đợi với tài khoản, chất lượng và album đích hiện tại. Bản trên iPhone vẫn được bảo vệ khỏi yêu cầu xóa đồng bộ. Tiến trình và kết quả hiển thị tại đây.",
-  "Backup allowed; iPhone copy protected": "Cho phép sao lưu · Vẫn bảo vệ bản iPhone"
+  "Backup allowed; iPhone copy protected": "Cho phép sao lưu · Vẫn bảo vệ bản iPhone",
+  "Remove entry": "Gỡ mục",
+  "Remove this entry?": "Gỡ mục này?",
+  "Could not remove entry": "Không thể gỡ mục",
+  "This removes the saved protection and finished upload history for this photo in the current account. It does not delete photos from your iPhone or Google Photos, or start an upload. If the old ID becomes accessible again, GoToHP will no longer block its backup or local deletion.": "Thao tác này gỡ dấu bảo vệ đã lưu và lịch sử tải lên đã kết thúc của ảnh này trong tài khoản hiện tại. Không xóa ảnh trên iPhone hay Google Photos và không bắt đầu tải lên. Nếu ID cũ truy cập được trở lại, GoToHP sẽ không còn chặn sao lưu hoặc xóa bản trên máy của ảnh đó.",
+  "Could not remove upload history. Protection was kept. Refresh and wait for unfinished uploads before trying again.": "Chưa gỡ được lịch sử tải lên. Dấu bảo vệ vẫn được giữ. Hãy làm mới và đợi các tác vụ tải lên chưa kết thúc trước khi thử lại."
 }

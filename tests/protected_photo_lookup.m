@@ -87,15 +87,19 @@ static NSDictionary *Lookup(NSArray *identifiers) {
     assert(![json containsString:@"private-"] && ![json containsString:@".jpg"]);
     return result;
 }
-static NSString *Forget(NSString *identifier, GSLocalPhotoProtection *store) {
+static NSString *ForgetWithHistory(NSString *identifier, GSLocalPhotoProtection *store,
+                                   BOOL (^forgetHistory)(void)) {
     __block NSString *result;
     dispatch_semaphore_t done = dispatch_semaphore_create(0);
     dispatch_async(dispatch_get_global_queue(QOS_CLASS_UTILITY, 0), ^{
-        result = GSForgetUnavailablePhotoProtection(identifier, store);
+        result = GSForgetUnavailablePhotoProtection(identifier, store, forgetHistory);
         dispatch_semaphore_signal(done);
     });
     assert(dispatch_semaphore_wait(done, dispatch_time(DISPATCH_TIME_NOW, 5 * NSEC_PER_SEC)) == 0);
     return result;
+}
+static NSString *Forget(NSString *identifier, GSLocalPhotoProtection *store) {
+    return ForgetWithHistory(identifier, store, nil);
 }
 @interface GSCleanupFailingStore : GSLocalPhotoProtection
 @end
@@ -242,15 +246,48 @@ int main(void) {
         ChangePermission = NO;
         Authorization = PHAuthorizationStatusAuthorized;
         assert(store.count == 2 && [[NSData dataWithContentsOfURL:file] isEqual:before]);
+        __block NSUInteger historyCalls = 0;
+        BOOL (^removeHistory)(void) = ^BOOL {
+            historyCalls++;
+            assert([store contains:@"private-missing"]);
+            return YES;
+        };
+        assert([ForgetWithHistory(nil, store, removeHistory) isEqual:@"lookup_unavailable"]);
+        assert([ForgetWithHistory(@"private-a", store, removeHistory) isEqual:@"photo_available"]);
+        assert(historyCalls == 0);
+        NilResult = YES;
+        assert([ForgetWithHistory(@"private-missing", store, removeHistory)
+            isEqual:@"lookup_unavailable"]);
+        NilResult = NO;
+        assert(historyCalls == 0);
+        assert([ForgetWithHistory(@"private-missing", store, ^BOOL {
+            historyCalls++;
+            return NO;
+        }) isEqual:@"history_unavailable"]);
+        assert(historyCalls == 1 && [store contains:@"private-missing"] &&
+               [[NSData dataWithContentsOfURL:file] isEqual:before]);
         GSCleanupFailingStore *failing = [[GSCleanupFailingStore alloc] initWithURL:file];
         assert([Forget(@"private-missing", failing) isEqual:@"write_failed"] &&
                [failing contains:@"private-missing"]);
+        __block BOOL historyRemoved = NO;
+        assert([ForgetWithHistory(@"private-missing", failing, ^BOOL {
+            historyRemoved = YES;
+            return YES;
+        }) isEqual:@"write_failed"]);
+        assert(historyRemoved && [failing contains:@"private-missing"]);
         assert([[NSData dataWithContentsOfURL:file] isEqual:before]);
-        assert([Forget(@"private-missing", store) isEqual:@"removed"]);
+        assert([ForgetWithHistory(@"private-missing", store, removeHistory) isEqual:@"removed"]);
+        assert(historyCalls == 2);
         GSLocalPhotoProtection *reopened = [[GSLocalPhotoProtection alloc] initWithURL:file];
         assert(reopened.count == 1 && [reopened contains:@"private-a"] &&
                ![reopened contains:@"private-missing"]);
         assert([Forget(@"private-missing", store) isEqual:@"already_removed"]);
+        // History left by an earlier version can be removed without a saved guard.
+        assert([ForgetWithHistory(@"private-missing", store, ^BOOL {
+            historyCalls++;
+            return YES;
+        }) isEqual:@"already_removed"]);
+        assert(historyCalls == 3 && reopened.count == 1);
         assert([Forget(@"private-missing", nil) isEqual:@"store_unavailable"]);
         [NSFileManager.defaultManager removeItemAtURL:root error:nil];
         NSLog(@"PASS protected-photo lookup permissions, missing IDs, bounded fetches, metadata "

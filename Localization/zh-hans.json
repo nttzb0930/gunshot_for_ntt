@@ -315,5 +315,10 @@
   "Could not confirm that this saved ID is unavailable. Protection is unchanged. Refresh and try again.": "无法确认已保存的 ID 已不可访问。保护状态保持不变，请刷新后重试。",
   "Could not remove protection": "无法移除保护",
   "The selected photos will be queued using the current account, upload quality, and album destination. Their iPhone copies stay protected from deletion sync. Progress and results appear here.": "所选照片将使用当前账号、上传质量和目标相册加入队列。iPhone 上的副本仍受保护，不会被同步删除。进度和结果会显示在此处。",
-  "Backup allowed; iPhone copy protected": "允许备份 · 仍保护 iPhone 副本"
+  "Backup allowed; iPhone copy protected": "允许备份 · 仍保护 iPhone 副本",
+  "Remove entry": "移除记录",
+  "Remove this entry?": "移除此记录？",
+  "Could not remove entry": "无法移除记录",
+  "This removes the saved protection and finished upload history for this photo in the current account. It does not delete photos from your iPhone or Google Photos, or start an upload. If the old ID becomes accessible again, GoToHP will no longer block its backup or local deletion.": "这将移除此照片已保存的保护标记，以及当前账号中已结束的上传记录。不会删除 iPhone 或 Google 相册中的照片，也不会开始上传。如果旧 ID 再次可访问，GoToHP 将不再阻止其备份或删除本地副本。",
+  "Could not remove upload history. Protection was kept. Refresh and wait for unfinished uploads before trying again.": "无法移除上传记录，保护标记仍保留。请刷新并等待未结束的上传任务完成后重试。"
 }

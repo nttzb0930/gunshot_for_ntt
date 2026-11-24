@@ -572,12 +572,15 @@
                : nil;
 }
 - (BOOL)canForgetProtectionForIdentifier:(NSString *)identifier {
-    // Queue history has its own cleanup. This action removes only an unavailable
-    // saved protection entry, never a queued job or an accessible photo's guard.
+    NSDictionary *job = self.jobs[identifier];
+    BOOL finished =
+        !job || [job[@"state"] isEqual:@"completed"] || [job[@"state"] isEqual:@"cancelled"];
+    // The service rechecks every matching job, including older rows not displayed.
     return !self.loading && !self.saving && !self.checkingPhoto &&
-           GSLocalPhotoProtectionStore().healthy && [self.protectedIDs containsObject:identifier] &&
+           GSLocalPhotoProtectionStore().healthy && self.account.length &&
+           ([self.protectedIDs containsObject:identifier] || job) && finished &&
            !self.assets[identifier] && [self.lookupReasons[identifier] isEqual:@"not_returned"] &&
-           !self.jobs[identifier] && !self.preparation[identifier] && !self.submitted[identifier];
+           !self.preparation[identifier] && !self.submitted[identifier];
 }
 - (UISwipeActionsConfiguration *)tableView:(UITableView *)tableView
     trailingSwipeActionsConfigurationForRowAtIndexPath:(NSIndexPath *)path {
@@ -589,7 +592,7 @@
     __weak GSProtectedPhotosController *weakSelf = self;
     UIContextualAction *action =
         [UIContextualAction contextualActionWithStyle:UIContextualActionStyleDestructive
-                                                title:GSL(@"Remove protection")
+                                                title:GSL(@"Remove entry")
                                               handler:^(UIContextualAction *action, UIView *view,
                                                         void (^complete)(BOOL)) {
                                                   complete(NO);
@@ -606,17 +609,18 @@
     if (self.presentedViewController || ![self canForgetProtectionForIdentifier:identifier])
         return;
     UIAlertController *alert = [UIAlertController
-        alertControllerWithTitle:GSL(@"Remove saved protection?")
-                         message:GSL(@"This removes only the saved protection entry, without "
-                                     @"deleting photos or starting an upload. If the old ID "
-                                     @"becomes accessible again, GoToHP will no longer block its "
-                                     @"backup or local deletion.")
+        alertControllerWithTitle:GSL(@"Remove this entry?")
+                         message:GSL(@"This removes the saved protection and finished upload "
+                                     @"history for this photo in the current account. It does "
+                                     @"not delete photos from your iPhone or Google Photos, or "
+                                     @"start an upload. If the old ID becomes accessible again, "
+                                     @"GoToHP will no longer block its backup or local deletion.")
                   preferredStyle:UIAlertControllerStyleAlert];
     [alert addAction:[UIAlertAction actionWithTitle:GSL(@"Cancel")
                                               style:UIAlertActionStyleCancel
                                             handler:nil]];
     __weak GSProtectedPhotosController *weakSelf = self;
-    [alert addAction:[UIAlertAction actionWithTitle:GSL(@"Remove protection")
+    [alert addAction:[UIAlertAction actionWithTitle:GSL(@"Remove entry")
                                               style:UIAlertActionStyleDestructive
                                             handler:^(UIAlertAction *action) {
                                                 [weakSelf forgetProtection:identifier];
@@ -627,11 +631,23 @@
     if (![self canForgetProtectionForIdentifier:identifier])
         return;
     self.saving = YES;
+    NSString *account = self.account;
     [self updateSelection];
     __weak GSProtectedPhotosController *weakSelf = self;
     dispatch_async(dispatch_get_global_queue(QOS_CLASS_UTILITY, 0), ^{
         NSString *result =
-            GSForgetUnavailablePhotoProtection(identifier, GSLocalPhotoProtectionStore());
+            GSForgetUnavailablePhotoProtection(identifier, GSLocalPhotoProtectionStore(), ^BOOL {
+                NSDictionary *accounts = GSRequest(@{@"op" : @"accounts"}, nil);
+                return [accounts[@"selected"] isEqual:account] &&
+                       GSRequest(
+                           @{
+                               @"op" : @"forget_rebackup",
+                               @"account" : account,
+                               @"rebackupAssetID" : identifier,
+                               @"confirm" : @YES
+                           },
+                           nil) != nil;
+            });
         dispatch_async(dispatch_get_main_queue(), ^{
             GSProtectedPhotosController *page = weakSelf;
             page.saving = NO;
@@ -643,6 +659,11 @@
                     [NSSet setWithArray:GSLocalPhotoProtectionStore().protectedIdentifiers];
                 page.backupBlockedIDs =
                     [NSSet setWithArray:GSLocalPhotoProtectionStore().backupBlockedIdentifiers];
+                NSMutableDictionary *jobs = [page.jobs mutableCopy];
+                [jobs removeObjectForKey:identifier];
+                page.jobs = jobs;
+                [page.preparation removeObjectForKey:identifier];
+                [page.submitted removeObjectForKey:identifier];
                 if (![page.protectedIDs containsObject:identifier] && !page.jobs[identifier]) {
                     NSMutableArray *identifiers = [page.identifiers mutableCopy];
                     [identifiers removeObject:identifier];
@@ -659,12 +680,15 @@
             NSString *message =
                 [result isEqual:@"photo_available"]
                     ? GSL(@"This photo is accessible again. Its protection was kept.")
+                : [result isEqual:@"history_unavailable"]
+                    ? GSL(@"Could not remove upload history. Protection was kept. Refresh and "
+                          @"wait for unfinished uploads before trying again.")
                 : [result isEqual:@"write_failed"] || [result isEqual:@"store_unavailable"]
                     ? GSL(@"The saved protection was not changed. Try again later.")
                     : GSL(@"Could not confirm that this saved ID is unavailable. Protection is "
                           @"unchanged. Refresh and try again.");
             UIAlertController *failure =
-                [UIAlertController alertControllerWithTitle:GSL(@"Could not remove protection")
+                [UIAlertController alertControllerWithTitle:GSL(@"Could not remove entry")
                                                     message:message
                                              preferredStyle:UIAlertControllerStyleAlert];
             [failure addAction:[UIAlertAction actionWithTitle:GSL(@"Done")

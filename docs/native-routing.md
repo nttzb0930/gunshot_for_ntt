@@ -177,14 +177,21 @@ access with no matching saved ID is not proof of deletion. The page displays the
 reasons individually, retries on pull-to-refresh/foreground, and never removes
 protection or remaps IDs because a lookup failed.
 
-An unavailable protected entry with a successful full-access negative lookup and
-no associated queue history can be swiped left to **Remove protection**. This
+An unavailable entry with a successful full-access negative lookup can be swiped
+left to **Remove entry**, including entries with completed/cancelled upload
+history or history left without a protection flag by an older version. This
 requires confirmation and a fresh PhotoKit lookup on a worker. An accessible ID,
-limited/denied permission, changed permission or failed query keeps its flag.
-Only the selected saved protection entry is removed; no media is deleted and no
-upload is started. Future backup and local-deletion guards no longer apply to
-that ID. Failed persistence leaves the row and protection intact; successful
-removal invalidates older page polls so they cannot reinsert the forgotten row.
+limited/denied permission, changed permission or failed query prevents removal.
+The `forget_rebackup` request requires confirmation and removes only completed
+or cancelled history matching the exact local ID and selected account. The service
+checks all matching jobs under its queue lock; unfinished, failed/retryable or
+still-active jobs reject the entire cleanup. Other history, album tasks, media
+files and completion revision are unchanged. Queue changes must persist before
+the local protection is removed. A queue error retains protection; if the later
+protection write fails, its flag remains and cleanup can be retried even though
+history has already been removed. No photo is deleted and no upload is started.
+Future backup and local-deletion guards no longer apply to the removed saved ID.
+Successful removal invalidates older page polls so they cannot reinsert the row.
 
 `previewThisLaunch` counts thumbnail requests and their available, cloud-only,
 failed or cancelled outcomes. These are request attempts, not unique photos.

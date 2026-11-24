@@ -11,7 +11,7 @@ func roleAllowed(role, op string) bool {
 	switch op {
 	case "conditions":
 		return role == "daemon"
-	case "album_catalog", "album_status", "upload_summary", "job", "ping", "list", "accounts", "options", "retry", "cancel", "clear_completed", "retry_failed":
+	case "album_catalog", "album_status", "upload_summary", "job", "ping", "list", "accounts", "options", "retry", "cancel", "clear_completed", "forget_rebackup", "retry_failed":
 		return role == "photos" || role == "googlephotos" || role == "settings"
 	case "album_batch", "begin", "append", "seal":
 		return role == "photos" || role == "googlephotos"
@@ -160,6 +160,8 @@ func (e *Engine) handle(r Request, role string) (any, error) {
 		clear(e.state.Jobs[len(next):]) // Release removed jobs held by the backing array.
 		e.state.Jobs = next
 		return nil, e.save()
+	case "forget_rebackup":
+		return nil, e.forgetRebackup(r)
 	case "retry_failed":
 		changed := false
 		for _, j := range e.state.Jobs {

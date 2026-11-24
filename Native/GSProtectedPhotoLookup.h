@@ -12,6 +12,8 @@ FOUNDATION_EXPORT NSDictionary *GSCheckProtectedPhotoSelection(NSString *identif
 
 @class GSLocalPhotoProtection;
 // Explicit, confirmed user action only. Rechecks full Photos access and absence
-// before persisting removal. Returns a fixed result code, never deletes media.
+// before persisting removal. Optional history cleanup must succeed first;
+// rejection leaves protection intact. Returns a fixed code, never deletes media.
 FOUNDATION_EXPORT NSString *GSForgetUnavailablePhotoProtection(NSString *identifier,
-                                                               GSLocalPhotoProtection *store);
+                                                               GSLocalPhotoProtection *store,
+                                                               BOOL (^forgetHistory)(void));

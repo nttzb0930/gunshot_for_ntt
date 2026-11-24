@@ -315,5 +315,10 @@
   "Could not confirm that this saved ID is unavailable. Protection is unchanged. Refresh and try again.": "Could not confirm that this saved ID is unavailable. Protection is unchanged. Refresh and try again.",
   "Could not remove protection": "Could not remove protection",
   "The selected photos will be queued using the current account, upload quality, and album destination. Their iPhone copies stay protected from deletion sync. Progress and results appear here.": "The selected photos will be queued using the current account, upload quality, and album destination. Their iPhone copies stay protected from deletion sync. Progress and results appear here.",
-  "Backup allowed; iPhone copy protected": "Backup allowed; iPhone copy protected"
+  "Backup allowed; iPhone copy protected": "Backup allowed; iPhone copy protected",
+  "Remove entry": "Remove entry",
+  "Remove this entry?": "Remove this entry?",
+  "Could not remove entry": "Could not remove entry",
+  "This removes the saved protection and finished upload history for this photo in the current account. It does not delete photos from your iPhone or Google Photos, or start an upload. If the old ID becomes accessible again, GoToHP will no longer block its backup or local deletion.": "This removes the saved protection and finished upload history for this photo in the current account. It does not delete photos from your iPhone or Google Photos, or start an upload. If the old ID becomes accessible again, GoToHP will no longer block its backup or local deletion.",
+  "Could not remove upload history. Protection was kept. Refresh and wait for unfinished uploads before trying again.": "Could not remove upload history. Protection was kept. Refresh and wait for unfinished uploads before trying again."
 }

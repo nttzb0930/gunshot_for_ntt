@@ -15,6 +15,39 @@ func (j *Job) resetRetry() {
 	j.CancelRequested = false
 }
 
+// Remove only confirmed, finished history for one local photo and account.
+// Called under mu; album tasks, media files and other jobs are untouched.
+func (e *Engine) forgetRebackup(r Request) error {
+	if !r.Confirm || r.Account == "" || r.RebackupAssetID == "" || !validAssetID(r.RebackupAssetID) {
+		return errRequest
+	}
+	next := make([]*Job, 0, len(e.state.Jobs))
+	var removed []*Job
+	for _, job := range e.state.Jobs {
+		if job.Account != r.Account || job.RebackupAssetID != r.RebackupAssetID {
+			next = append(next, job)
+			continue
+		}
+		if _, active := e.active[job.ID]; active || (job.State != "completed" && job.State != "cancelled") {
+			return errRequest
+		}
+		removed = append(removed, job)
+	}
+	if len(removed) == 0 {
+		return nil
+	}
+	previous := e.state.Jobs
+	e.state.Jobs = next
+	if err := e.save(); err != nil {
+		e.state.Jobs = previous
+		return err
+	}
+	for _, job := range removed {
+		delete(e.jobsByID, job.ID)
+	}
+	return nil
+}
+
 func (e *Engine) Tick() {
 	e.mu.Lock()
 	defer e.mu.Unlock()

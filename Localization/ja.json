@@ -315,5 +315,10 @@
   "Could not confirm that this saved ID is unavailable. Protection is unchanged. Refresh and try again.": "保存したIDにアクセスできないことを確認できませんでした。保護は維持されています。更新して再試行してください。",
   "Could not remove protection": "保護を解除できませんでした",
   "The selected photos will be queued using the current account, upload quality, and album destination. Their iPhone copies stay protected from deletion sync. Progress and results appear here.": "選択した写真は、現在のアカウント、画質、保存先アルバムでキューに追加されます。iPhone上のコピーは同期による削除から引き続き保護されます。進行状況と結果はここに表示されます。",
-  "Backup allowed; iPhone copy protected": "バックアップ許可済み・iPhoneのコピーは保護中"
+  "Backup allowed; iPhone copy protected": "バックアップ許可済み・iPhoneのコピーは保護中",
+  "Remove entry": "項目を削除",
+  "Remove this entry?": "この項目を削除しますか？",
+  "Could not remove entry": "項目を削除できません",
+  "This removes the saved protection and finished upload history for this photo in the current account. It does not delete photos from your iPhone or Google Photos, or start an upload. If the old ID becomes accessible again, GoToHP will no longer block its backup or local deletion.": "この写真の保存済み保護情報と、現在のアカウントの終了済みアップロード履歴を削除します。iPhoneやGoogleフォトの写真は削除されず、アップロードも開始されません。古いIDに再びアクセスできるようになった場合、GoToHPはその写真のバックアップや端末からの削除をブロックしなくなります。",
+  "Could not remove upload history. Protection was kept. Refresh and wait for unfinished uploads before trying again.": "アップロード履歴を削除できませんでした。保護は維持されています。更新し、未完了のアップロードが終了してから再試行してください。"
 }

@@ -19,6 +19,7 @@ func TestRolePermissions(t *testing.T) {
 		"retry":               "photos googlephotos settings",
 		"cancel":              "photos googlephotos settings",
 		"clear_completed":     "photos googlephotos settings",
+		"forget_rebackup":     "photos googlephotos settings",
 		"retry_failed":        "photos googlephotos settings",
 		"begin":               "photos googlephotos",
 		"append":              "photos googlephotos",
