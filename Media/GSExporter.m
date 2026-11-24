@@ -97,7 +97,8 @@ static NSArray<NSURL *> *GSWriteCurrentResources(PHAsset *asset, NSURL *director
 }
 static NSArray<NSURL *> *GSExportOriginals(PHAsset *asset, NSURL *directory, BOOL rebackup,
                                            NSError **error) {
-    if (!rebackup && [GSLocalPhotoProtectionStore() contains:asset.localIdentifier]) {
+    if (!rebackup &&
+        [GSLocalPhotoProtectionStore() blocksBackupForIdentifier:asset.localIdentifier]) {
         [GSLocalPhotoProtectionStore() recordBlockedUpload];
         if (error)
             *error = [NSError

@@ -1,4 +1,5 @@
 #import "GSProtectedPhotoLookup.h"
+#import "GSLocalPhotoProtection.h"
 #import "../Shared/GSLocalization.h"
 #import <Photos/Photos.h>
 
@@ -216,4 +217,28 @@ NSDictionary *GSCheckProtectedPhotoSelection(NSString *identifier, NSArray<NSStr
         @"savedCount" : @(saved.count),
         @"lookup" : lookup
     };
+}
+NSString *GSForgetUnavailablePhotoProtection(NSString *identifier, GSLocalPhotoProtection *store) {
+    NSCAssert(!NSThread.isMainThread, @"Recheck unavailable protection on a worker");
+    if (!store || !store.healthy)
+        return @"store_unavailable";
+    if (![store contains:identifier])
+        return @"already_removed";
+    NSDictionary *lookup = GSLookupProtectedPhotos(@[ identifier ]);
+    [store recordPhotoLookup:lookup[@"report"]];
+    if (lookup[@"assets"][identifier])
+        return @"photo_available";
+    NSDictionary *report = lookup[@"report"];
+    if (![report[@"authorization"] isEqual:@"authorized"] ||
+        ![report[@"queryState"] isEqual:@"succeeded"] ||
+        ![lookup[@"reasons"][identifier] isEqual:@"not_returned"])
+        return @"lookup_unavailable";
+    @synchronized(store) {
+        if (!store.healthy)
+            return @"store_unavailable";
+        if (![store contains:identifier])
+            return @"already_removed";
+        return [store allowBackupForIdentifiers:@[ identifier ] error:nil] ? @"removed"
+                                                                           : @"write_failed";
+    }
 }

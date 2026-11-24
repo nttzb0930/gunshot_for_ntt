@@ -102,7 +102,8 @@ static BOOL GSCanPrepare(NSDictionary *options) {
 #endif
 }
 static BOOL GSStillAuthorized(GSBackupTransfer *transfer) {
-    return !transfer.cancelled && ![GSLocalPhotoProtectionStore() contains:transfer.localID] &&
+    return !transfer.cancelled &&
+           ![GSLocalPhotoProtectionStore() blocksBackupForIdentifier:transfer.localID] &&
            GSNativeRoutingEnabled() && [GSNativeRoutingAccount() isEqual:transfer.account] &&
            GSNativeIdentityMatches(transfer.identityIdentifier);
 }
@@ -134,7 +135,8 @@ static void GSReportProgress(id request, GSBackupTransfer *transfer, NSDictionar
 static void GSStart(id request, SEL selector, IMP original) {
     id protectedAsset = GSPhotosGetObject(request, @"asset");
     if ([protectedAsset isKindOfClass:PHAsset.class] &&
-        [GSLocalPhotoProtectionStore() contains:((PHAsset *)protectedAsset).localIdentifier]) {
+        [GSLocalPhotoProtectionStore()
+            blocksBackupForIdentifier:((PHAsset *)protectedAsset).localIdentifier]) {
         [GSLocalPhotoProtectionStore() recordBlockedUpload];
         GSCount(@"cloudDeletedAssetBlocked");
         GSFail(request, 6);

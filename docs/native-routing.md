@@ -110,12 +110,24 @@ protection; absence from a fetch is not treated as proof of deletion. Selected
 items can explicitly **Back up again**, using the current account, quality and
 album destination. Originals are exported while protection remains saved; after
 the non-runnable importing job has copied every resource, account/identity and
-consent are checked again before removing protection and sealing the upload.
-Inaccessible assets are not queued or unprotected. Preparation failures retain
-protection; if sealing fails after removal, the worker attempts to restore it.
+consent are checked again before permitting backup and sealing the upload.
+The local-deletion guard stays saved throughout. Inaccessible assets are not
+queued or unprotected. Preparation failures retain both guards; if sealing fails
+after newly granting backup consent, the worker attempts to restore upload
+suppression without revoking consent that was already granted before this attempt.
 This does not delete local media. The device-local consent write and queue seal
 are separate operations; an interrupted import is shown as cancelled and can be
 selected again after relaunch.
+
+Rebackup permits uploads while retaining device-local protection against deletion
+sync. The schema-2 local store persists protected IDs and the subset allowed to
+back up, atomically; schema-1 stores migrate with upload suppression intact.
+A later cloud-only deletion resets upload consent. Explicit normal deletion
+clears both states before invoking the host command, so both deletion choices
+remain available after rebackup. Invalid state blocks uploads and local deletions.
+Rebackup does not acknowledge, clear or hide the host app's pending deletion review list.
+Upload completion is not proof that an earlier native deletion record has been
+discarded; a pending deletion review must not be treated as a harmless upload notice.
 
 The page retains thumbnails, resource filenames, state icons, actual byte progress,
 quality and upload results. It polls the existing queue off main while visible,
@@ -151,7 +163,8 @@ the promise result, not independent proof that the item disappeared from the UI.
 The existing backup report counts `cloudDeletedAssetBlocked`. Neither section
 includes local identities, photo contents or credentials.
 The same report includes `cloudOnlyDeletion.protection`: store health, protected
-count, upload-block attempts (native backup and asset export), unprotect attempts,
+count, `backupBlockedCount`, `backupAllowedCount`, upload-block attempts (native
+backup and asset export), unprotect attempts,
 successes, failures, last result and numeric error code. Counters cover this launch;
 protection identities and queue history persist. No additional diagnostics screen is added.
 
@@ -163,6 +176,15 @@ lookup; metadata failures do not turn a resolved asset into a missing one. Full
 access with no matching saved ID is not proof of deletion. The page displays these
 reasons individually, retries on pull-to-refresh/foreground, and never removes
 protection or remaps IDs because a lookup failed.
+
+An unavailable protected entry with a successful full-access negative lookup and
+no associated queue history can be swiped left to **Remove protection**. This
+requires confirmation and a fresh PhotoKit lookup on a worker. An accessible ID,
+limited/denied permission, changed permission or failed query keeps its flag.
+Only the selected saved protection entry is removed; no media is deleted and no
+upload is started. Future backup and local-deletion guards no longer apply to
+that ID. Failed persistence leaves the row and protection intact; successful
+removal invalidates older page polls so they cannot reinsert the forgotten row.
 
 `previewThisLaunch` counts thumbnail requests and their available, cloud-only,
 failed or cancelled outcomes. These are request attempts, not unique photos.

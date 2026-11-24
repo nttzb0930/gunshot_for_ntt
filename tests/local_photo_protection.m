@@ -13,10 +13,24 @@ int main(void) {
         NSError *error = nil;
         assert(([store updateIdentifiers:@[ @"a", @"b", @"a" ] protect:YES error:&error]));
         assert(error == nil && store.count == 2 && [store contains:@"a"]);
+        assert([store blocksBackupForIdentifier:@"a"]);
+        assert([store allowRebackupForIdentifiers:@[ @"a" ] error:nil]);
+        assert([store contains:@"a"] && ![store blocksBackupForIdentifier:@"a"]);
+        assert([store blocksBackupForIdentifier:@"b"]);
+        assert(([store.backupBlockedIdentifiers isEqual:@[ @"b" ]]));
+        store = [[GSLocalPhotoProtection alloc] initWithURL:file];
+        assert(store.healthy && [store contains:@"a"] && ![store blocksBackupForIdentifier:@"a"]);
+        assert([store.diagnostics[@"backupAllowedCount"] intValue] == 1);
+        assert([store.diagnostics[@"backupBlockedCount"] intValue] == 1);
+        assert([store updateIdentifiers:@[ @"a" ] protect:YES error:nil]);
+        assert([store contains:@"a"] && [store blocksBackupForIdentifier:@"a"]);
+        assert([store allowRebackupForIdentifiers:@[ @"a" ] error:nil]);
         NSArray *snapshot = store.protectedIdentifiers;
         assert(([snapshot isEqual:@[ @"a", @"b" ]]));
         assert([store allowBackupForIdentifiers:@[ @"a" ] error:nil]);
         assert(![store contains:@"a"] && [store contains:@"b"]);
+        assert(![store blocksBackupForIdentifier:@"a"]);
+        assert([store.diagnostics[@"backupAllowedCount"] intValue] == 0);
         assert(snapshot.count == 2); // An earlier UI snapshot remains immutable.
         assert([store.diagnostics[@"unprotectSucceeded"] unsignedIntegerValue] == 1);
         assert([store.diagnostics[@"lastUnprotectErrorCode"] integerValue] == 0);
@@ -126,14 +140,46 @@ int main(void) {
         assert([unwritable.diagnostics[@"unprotectFailed"] unsignedIntegerValue] == 1);
         assert(unwritable.count == 0);
 
+        // A legacy database keeps both guards until explicit rebackup consent.
+        assert([[@"{\"schema\":1,\"localIDs\":[\"legacy\"]}" dataUsingEncoding:NSUTF8StringEncoding]
+            writeToURL:file
+            atomically:YES]);
+        store = [[GSLocalPhotoProtection alloc] initWithURL:file];
+        assert(store.healthy && [store contains:@"legacy"] &&
+               [store blocksBackupForIdentifier:@"legacy"]);
+        assert(([store allowRebackupForIdentifiers:@[ @"legacy", @"not-protected" ] error:nil]));
+        assert(![store contains:@"not-protected"] &&
+               ![store blocksBackupForIdentifier:@"not-protected"]);
+        store = [[GSLocalPhotoProtection alloc] initWithURL:file];
+        assert(store.healthy && [store contains:@"legacy"] &&
+               ![store blocksBackupForIdentifier:@"legacy"]);
+        assert(![store allowRebackupForIdentifiers:@[] error:nil]);
+        assert(![store allowRebackupForIdentifiers:(id) @[ @42 ] error:nil]);
+        // Failure to save consent must not enable backup or remove local protection.
+        assert([store updateIdentifiers:@[ @"legacy" ] protect:YES error:nil]);
+        [NSFileManager.defaultManager removeItemAtURL:file error:nil];
+        assert([NSFileManager.defaultManager createDirectoryAtURL:file
+                                      withIntermediateDirectories:NO
+                                                       attributes:nil
+                                                            error:nil]);
+        assert(![store allowRebackupForIdentifiers:@[ @"legacy" ] error:nil]);
+        assert([store contains:@"legacy"] && [store blocksBackupForIdentifier:@"legacy"]);
+        [NSFileManager.defaultManager removeItemAtURL:file error:nil];
+
         for (NSString *corrupt in @[
                  @"not-json", @"[]", @"{\"schema\":2,\"localIDs\":[]}",
+                 @"{\"schema\":3,\"localIDs\":[]}",
+                 @"{\"schema\":2,\"localIDs\":[],\"backupAllowedIDs\":[\"a\"]}",
+                 @"{\"schema\":2,\"localIDs\":[\"a\"],\"backupAllowedIDs\":[42]}",
                  @"{\"schema\":1,\"localIDs\":[42]}"
              ]) {
             assert([[corrupt dataUsingEncoding:NSUTF8StringEncoding] writeToURL:file
                                                                      atomically:YES]);
             store = [[GSLocalPhotoProtection alloc] initWithURL:file];
             assert(!store.healthy && [store contains:@"a"] && [store contains:@"unknown"]);
+            assert([store blocksBackupForIdentifier:@"a"] &&
+                   [store blocksBackupForIdentifier:@"unknown"]);
+            assert(![store allowRebackupForIdentifiers:@[ @"a" ] error:nil]);
             assert(store.protectedIdentifiers.count == 0);
             assert(![store updateIdentifiers:@[ @"a" ] protect:NO error:nil]);
         }

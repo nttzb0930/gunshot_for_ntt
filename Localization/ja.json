@@ -288,7 +288,6 @@
   "Kept on this iPhone": "このiPhoneで保持中",
   "Local photo not accessible": "端末の写真にアクセスできません",
   "Back up selected photos again?": "選択した写真を再バックアップしますか？",
-  "The selected photos will be unprotected and queued using the current account, upload quality, and album destination. Progress and results appear here.": "選択した写真の保護を解除し、現在のアカウント、画質、保存先アルバムでキューに追加します。進行状況と結果はここに表示されます。",
   "Reconnect to Google Photos before backing up again.": "再バックアップする前にGoogleフォトに再接続してください。",
   "Retry this upload?": "このアップロードを再試行しますか？",
   "Photo access is not granted. Check Photos permission in Settings.": "写真へのアクセスが許可されていません。設定で写真の権限を確認してください。",
@@ -308,5 +307,13 @@
   "Photo found. Its current ID does not match any saved protection entry. No photos were linked.": "写真を読み取れましたが、現在のIDは保存済みの保護項目と一致しません。写真の関連付けは行っていません。",
   "The picker returned an ID, but PhotoKit did not return the selected photo.": "選択画面からIDを取得できましたが、PhotoKitでは選んだ写真が見つかりませんでした。",
   "The picker did not return a photo ID. Protection is unchanged.": "選択画面から写真のIDを取得できませんでした。保護は維持されています。",
-  "Could not check the selected photo. See upload diagnostics for details.": "選んだ写真を確認できませんでした。詳細はアップロード診断を確認してください。"
+  "Could not check the selected photo. See upload diagnostics for details.": "選んだ写真を確認できませんでした。詳細はアップロード診断を確認してください。",
+  "Remove protection": "保護を解除",
+  "Remove saved protection?": "保存済みの保護を解除しますか？",
+  "This removes only the saved protection entry, without deleting photos or starting an upload. If the old ID becomes accessible again, GoToHP will no longer block its backup or local deletion.": "保存済みの保護項目だけを解除し、写真の削除やアップロードは行いません。以前のIDに再びアクセスできるようになった場合、GoToHPはその写真のバックアップや端末上の削除をブロックしなくなります。",
+  "This photo is accessible again. Its protection was kept.": "この写真は再びアクセス可能になりました。保護は維持されています。",
+  "Could not confirm that this saved ID is unavailable. Protection is unchanged. Refresh and try again.": "保存したIDにアクセスできないことを確認できませんでした。保護は維持されています。更新して再試行してください。",
+  "Could not remove protection": "保護を解除できませんでした",
+  "The selected photos will be queued using the current account, upload quality, and album destination. Their iPhone copies stay protected from deletion sync. Progress and results appear here.": "選択した写真は、現在のアカウント、画質、保存先アルバムでキューに追加されます。iPhone上のコピーは同期による削除から引き続き保護されます。進行状況と結果はここに表示されます。",
+  "Backup allowed; iPhone copy protected": "バックアップ許可済み・iPhoneのコピーは保護中"
 }

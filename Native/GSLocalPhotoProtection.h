@@ -6,6 +6,9 @@
 @interface GSLocalPhotoProtection : NSObject
 - (instancetype)initWithURL:(NSURL *)url;
 - (BOOL)contains:(NSString *)identifier;
+// Upload consent is independent of the guard against local deletion sync.
+- (BOOL)blocksBackupForIdentifier:(NSString *)identifier;
+- (BOOL)allowRebackupForIdentifiers:(NSArray<NSString *> *)identifiers error:(NSError **)error;
 - (BOOL)updateIdentifiers:(NSArray<NSString *> *)identifiers
                   protect:(BOOL)protect
                     error:(NSError **)error;
@@ -17,6 +20,7 @@
 // Session attempt counters only; accepts fixed outcome codes, never photo data.
 - (void)recordPreviewResult:(NSString *)outcome;
 @property (nonatomic, readonly, copy) NSArray<NSString *> *protectedIdentifiers;
+@property (nonatomic, readonly, copy) NSArray<NSString *> *backupBlockedIdentifiers;
 // Redacted session counters; identifiers are intentionally excluded.
 @property (nonatomic, readonly, copy) NSDictionary *diagnostics;
 @property (nonatomic, readonly) BOOL healthy;

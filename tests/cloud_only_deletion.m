@@ -401,6 +401,12 @@ int main(int argc, char **argv) {
         b.localIdentifier = @"local-b";
         [PHAssetChangeRequest deleteAssets:@[ a, b ]];
         assert(DeletedAssets.count == 1 && DeletedAssets[0] == b); // Simulated later deletion sync.
+        // Rebackup permits uploads while an old deletion sync still cannot remove local media.
+        assert([FixtureStore allowRebackupForIdentifiers:@[ @"local-a" ] error:nil]);
+        assert([FixtureStore contains:@"local-a"] &&
+               ![FixtureStore blocksBackupForIdentifier:@"local-a"]);
+        [PHAssetChangeRequest deleteAssets:@[ a, b ]];
+        assert(DeletedAssets.count == 1 && DeletedAssets[0] == b);
         proxy = [Command() execute];
         Choose(2);
         assert(proxy.failure && CloudCalls == 1 && [FixtureStore contains:@"local-a"]);
@@ -427,6 +433,8 @@ int main(int argc, char **argv) {
         assert(CloudCalls == 1);
         AccountMatches = YES;
 
+        // Explicit normal deletion still works after upload consent is restored.
+        assert([FixtureStore allowRebackupForIdentifiers:@[ @"local-a" ] error:nil]);
         command = Command();
         proxy = [command execute];
         Choose(1);
@@ -434,7 +442,7 @@ int main(int argc, char **argv) {
         assert(DeletedAssets.count == 1 &&
                [((PHAsset *)DeletedAssets[0]).localIdentifier isEqual:@"local-a"]);
         NSDictionary *snapshot = GSCloudOnlyDeletionSnapshot();
-        assert([snapshot[@"blockedLocalDeletes"] unsignedIntegerValue] == 1);
+        assert([snapshot[@"blockedLocalDeletes"] unsignedIntegerValue] == 2);
         assert([snapshot[@"protectedLocalCount"] unsignedIntegerValue] == 0);
         assert([snapshot[@"unresolvedSelections"] unsignedIntegerValue] == 1);
         FailCloud = YES;
@@ -446,6 +454,7 @@ int main(int argc, char **argv) {
         });
         assert([[(NSError *)proxy.failure domain] isEqual:@"fixture.cloud"]);
         assert(CloudCalls == 3 && DeletedAssets == nil && [FixtureStore contains:@"local-a"]);
+        assert([FixtureStore blocksBackupForIdentifier:@"local-a"]);
         NSDictionary *nativeFailure = GSCloudOnlyDeletionSnapshot()[@"nativeExecuteResult"];
         assert([nativeFailure[@"status"] isEqual:@"failed"]);
         assert([nativeFailure[@"errorCode"] integerValue] == 503);

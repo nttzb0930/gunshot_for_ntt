@@ -173,7 +173,7 @@ static BOOL GSStartImport(NSUInteger count, NSString *source, BOOL assets,
                         if (!reason && files) {
                             state[@"stage"] = @"queueing";
                             GSRecordBatch(state);
-                            __block BOOL removedProtection = NO;
+                            __block BOOL grantedBackupConsent = NO;
                             __block NSString *sealReason = nil;
                             NSString *localID = rebackup ? ((PHAsset *)item).localIdentifier : nil;
                             NSString *job =
@@ -187,14 +187,14 @@ static BOOL GSStartImport(NSUInteger count, NSString *source, BOOL assets,
                                                   return NO;
                                               // Persist consent only after all original bytes have
                                               // reached the non-runnable importing job.
-                                              BOOL protected =
-                                                  [GSLocalPhotoProtectionStore() contains:localID];
-                                              if (protected &&
+                                              BOOL blocked = [GSLocalPhotoProtectionStore()
+                                                  blocksBackupForIdentifier:localID];
+                                              if (blocked &&
                                                   ![GSLocalPhotoProtectionStore()
-                                                      allowBackupForIdentifiers:@[ localID ]
-                                                                          error:nil])
+                                                      allowRebackupForIdentifiers:@[ localID ]
+                                                                            error:nil])
                                                   return NO;
-                                              removedProtection = protected;
+                                              grantedBackupConsent = blocked;
                                               return YES;
                                           },
                                           &error)
@@ -205,7 +205,7 @@ static BOOL GSStartImport(NSUInteger count, NSString *source, BOOL assets,
                                 queued++;
                             } else {
                                 reason = sealReason ?: @"queue_rejected";
-                                if (removedProtection &&
+                                if (grantedBackupConsent &&
                                     ![GSLocalPhotoProtectionStore() updateIdentifiers:@[ localID ]
                                                                               protect:YES
                                                                                 error:nil])

@@ -122,7 +122,8 @@ NSString *GSImportRebackupFiles(NSArray *files, NSString *account, NSString *qua
                                 NSError **error) {
     if (FailQueue || !beforeSeal() || FailAfterConsent)
         return nil;
-    assert(![GSLocalPhotoProtectionStore() contains:assetIdentifier]);
+    assert([GSLocalPhotoProtectionStore() contains:assetIdentifier]);
+    assert(![GSLocalPhotoProtectionStore() blocksBackupForIdentifier:assetIdentifier]);
     return GSImportFiles(files, account, quality, date, error);
 }
 static NSDictionary *RunProtected(NSArray *ids, NSUInteger expectedResults) {
@@ -214,21 +215,32 @@ int main(void) {
         result = Run(@[ @"0", @"1" ]);
         assert(Queued == before + 2 && [result[@"queued"] intValue] == 2);
         GSLocalPhotoProtection *store = GSLocalPhotoProtectionStore();
-        assert([store updateIdentifiers:@[ @"protected-local-secret", @"missing", @"500" ]
-                                protect:YES
-                                  error:nil]);
+        assert(([store updateIdentifiers:@[ @"protected-local-secret", @"missing", @"500" ]
+                                 protect:YES
+                                   error:nil]));
         result = RunProtected(@[ @"protected-local-secret", @"missing" ], 2);
         assert([result[@"queued"] intValue] == 1 && [result[@"failed"] intValue] == 1);
-        assert(![store contains:@"protected-local-secret"] && [store contains:@"missing"]);
+        assert([store contains:@"protected-local-secret"] &&
+               ![store blocksBackupForIdentifier:@"protected-local-secret"] &&
+               [store blocksBackupForIdentifier:@"missing"]);
         FailExport = YES;
         result = RunProtected(@[ @"500" ], 1);
-        assert([result[@"failed"] intValue] == 1 && [store contains:@"500"]);
+        assert([result[@"failed"] intValue] == 1 && [store contains:@"500"] &&
+               [store blocksBackupForIdentifier:@"500"]);
         FailExport = NO;
         assert([store updateIdentifiers:@[ @"protected-local-secret" ] protect:YES error:nil]);
         FailAfterConsent = YES;
         result = RunProtected(@[ @"protected-local-secret" ], 1);
         assert([result[@"stopReason"] isEqual:@"queue_rejected"] &&
-               [store contains:@"protected-local-secret"]);
+               [store contains:@"protected-local-secret"] &&
+               [store blocksBackupForIdentifier:@"protected-local-secret"]);
+        // A failed retry must not revoke previously granted upload consent.
+        assert([store allowRebackupForIdentifiers:@[ @"protected-local-secret" ] error:nil]);
+        result = RunProtected(@[ @"protected-local-secret" ], 1);
+        assert([result[@"stopReason"] isEqual:@"queue_rejected"] &&
+               [store contains:@"protected-local-secret"] &&
+               ![store blocksBackupForIdentifier:@"protected-local-secret"]);
+        assert([store updateIdentifiers:@[ @"protected-local-secret" ] protect:YES error:nil]);
         FailAfterConsent = NO;
         SwitchDuringExport = YES;
         result = RunProtected(@[ @"protected-local-secret" ], 1);
@@ -236,9 +248,9 @@ int main(void) {
                [store contains:@"protected-local-secret"]);
         SwitchDuringExport = NO;
         Identity = @"identity-A";
-        assert([store updateIdentifiers:@[ @"protected-local-secret", @"missing", @"500" ]
-                                protect:NO
-                                  error:nil]);
+        assert(([store updateIdentifiers:@[ @"protected-local-secret", @"missing", @"500" ]
+                                 protect:NO
+                                   error:nil]));
         NSLog(@"PASS 2000 selections, bounded PhotoKit pages, missing IDs, individual export "
               @"failure, Live Photo resources, account switch, cancellation, queue/IPC failure, "
               @"retry and private batch diagnostics");

@@ -59,6 +59,7 @@
                                            UIAdaptivePresentationControllerDelegate>
 @property (nonatomic, copy) NSArray<NSString *> *identifiers;
 @property (nonatomic, copy) NSSet<NSString *> *protectedIDs;
+@property (nonatomic, copy) NSSet<NSString *> *backupBlockedIDs;
 @property (nonatomic, copy) NSDictionary<NSString *, PHAsset *> *assets;
 @property (nonatomic, copy) NSDictionary *names, *jobs, *conditions;
 @property (nonatomic, copy) NSDictionary *lookupReasons;
@@ -81,6 +82,7 @@
     if ((self = [super initWithStyle:UITableViewStyleInsetGrouped])) {
         _identifiers = @[];
         _protectedIDs = [NSSet set];
+        _backupBlockedIDs = [NSSet set];
         _assets = @{};
         _names = @{};
         _jobs = @{};
@@ -187,7 +189,13 @@
     [self updateEmptyState];
     __weak GSProtectedPhotosController *weakSelf = self;
     dispatch_async(dispatch_get_global_queue(QOS_CLASS_UTILITY, 0), ^{
-        NSArray *protected = GSLocalPhotoProtectionStore().protectedIdentifiers;
+        GSLocalPhotoProtection *store = GSLocalPhotoProtectionStore();
+        NSArray *protected;
+        NSSet *backupBlockedIDs;
+        @synchronized(store) {
+            protected = store.protectedIdentifiers;
+            backupBlockedIDs = [NSSet setWithArray:store.backupBlockedIdentifiers];
+        }
         NSDictionary *accounts = GSRequest(@{@"op" : @"accounts"}, nil);
         NSString *account = accounts[@"selected"];
         NSMutableDictionary *jobs = [NSMutableDictionary dictionary];
@@ -259,6 +267,7 @@
                 controller.account = nil;
                 controller.identifiers = identifiers;
                 controller.protectedIDs = [NSSet setWithArray:protected];
+                controller.backupBlockedIDs = backupBlockedIDs;
                 controller.assets = assets;
                 controller.names = names;
                 [controller.selected intersectSet:[NSSet setWithArray:assets.allKeys]];
@@ -281,12 +290,14 @@
             BOOL changed = lookedUp || ![controller.identifiers isEqual:identifiers] ||
                            ![controller.jobs isEqual:jobs] || ![controller.assets isEqual:assets] ||
                            ![controller.protectedIDs isEqual:protectedIDs] ||
+                           ![controller.backupBlockedIDs isEqual:backupBlockedIDs] ||
                            ![controller.conditions isEqual:conditions] ||
                            controller.refreshError != nil;
             controller.refreshError = nil;
             controller.account = account;
             controller.identifiers = identifiers;
             controller.protectedIDs = protectedIDs;
+            controller.backupBlockedIDs = backupBlockedIDs;
             controller.assets = assets;
             controller.names = names;
             controller.jobs = jobs;
@@ -295,10 +306,10 @@
                 [controller.submitted removeAllObjects];
             else
                 for (NSString *identifier in submitted)
-                    if (![protectedIDs containsObject:identifier] &&
+                    if (![backupBlockedIDs containsObject:identifier] &&
                         [submitted[identifier] isEqual:jobs[identifier][@"id"]])
                         [controller.submitted removeObjectForKey:identifier];
-            NSMutableSet *selectable = [protectedIDs mutableCopy];
+            NSMutableSet *selectable = [backupBlockedIDs mutableCopy];
             [selectable intersectSet:[NSSet setWithArray:assets.allKeys]];
             for (NSString *identifier in jobs)
                 if ([jobs[identifier][@"state"] isEqual:@"cancelled"] && assets[identifier])
@@ -381,7 +392,7 @@
     NSString *submitted = self.submitted[identifier];
     if (submitted && ![submitted isEqual:self.jobs[identifier][@"id"]])
         return nil;
-    if ([self.protectedIDs containsObject:identifier] && !submitted)
+    if ([self.backupBlockedIDs containsObject:identifier] && !submitted)
         return nil;
     return self.jobs[identifier];
 }
@@ -399,6 +410,9 @@
     NSMutableArray *lines = [NSMutableArray array];
     if (state.length)
         [lines addObject:state];
+    if ([self.protectedIDs containsObject:identifier] &&
+        ![self.backupBlockedIDs containsObject:identifier])
+        [lines addObject:GSL(@"Backup allowed; iPhone copy protected")];
     if (asset.creationDate)
         [lines addObject:[NSDateFormatter localizedStringFromDate:asset.creationDate
                                                         dateStyle:NSDateFormatterMediumStyle
@@ -552,10 +566,113 @@
     NSDictionary *job = [self jobForIdentifier:identifier];
     if ([job[@"state"] isEqual:@"failed"])
         return path;
-    return self.assets[identifier] && ([self.protectedIDs containsObject:identifier] ||
+    return self.assets[identifier] && ([self.backupBlockedIDs containsObject:identifier] ||
                                        [job[@"state"] isEqual:@"cancelled"])
                ? path
                : nil;
+}
+- (BOOL)canForgetProtectionForIdentifier:(NSString *)identifier {
+    // Queue history has its own cleanup. This action removes only an unavailable
+    // saved protection entry, never a queued job or an accessible photo's guard.
+    return !self.loading && !self.saving && !self.checkingPhoto &&
+           GSLocalPhotoProtectionStore().healthy && [self.protectedIDs containsObject:identifier] &&
+           !self.assets[identifier] && [self.lookupReasons[identifier] isEqual:@"not_returned"] &&
+           !self.jobs[identifier] && !self.preparation[identifier] && !self.submitted[identifier];
+}
+- (UISwipeActionsConfiguration *)tableView:(UITableView *)tableView
+    trailingSwipeActionsConfigurationForRowAtIndexPath:(NSIndexPath *)path {
+    if (path.section != 0 || path.row >= self.identifiers.count || self.presentedViewController)
+        return nil;
+    NSString *identifier = self.identifiers[path.row];
+    if (![self canForgetProtectionForIdentifier:identifier])
+        return nil;
+    __weak GSProtectedPhotosController *weakSelf = self;
+    UIContextualAction *action =
+        [UIContextualAction contextualActionWithStyle:UIContextualActionStyleDestructive
+                                                title:GSL(@"Remove protection")
+                                              handler:^(UIContextualAction *action, UIView *view,
+                                                        void (^complete)(BOOL)) {
+                                                  complete(NO);
+                                                  [weakSelf.tableView setEditing:NO animated:YES];
+                                                  [weakSelf confirmForgetProtection:identifier];
+                                              }];
+    action.image = [UIImage systemImageNamed:@"lock.open"];
+    UISwipeActionsConfiguration *configuration =
+        [UISwipeActionsConfiguration configurationWithActions:@[ action ]];
+    configuration.performsFirstActionWithFullSwipe = NO;
+    return configuration;
+}
+- (void)confirmForgetProtection:(NSString *)identifier {
+    if (self.presentedViewController || ![self canForgetProtectionForIdentifier:identifier])
+        return;
+    UIAlertController *alert = [UIAlertController
+        alertControllerWithTitle:GSL(@"Remove saved protection?")
+                         message:GSL(@"This removes only the saved protection entry, without "
+                                     @"deleting photos or starting an upload. If the old ID "
+                                     @"becomes accessible again, GoToHP will no longer block its "
+                                     @"backup or local deletion.")
+                  preferredStyle:UIAlertControllerStyleAlert];
+    [alert addAction:[UIAlertAction actionWithTitle:GSL(@"Cancel")
+                                              style:UIAlertActionStyleCancel
+                                            handler:nil]];
+    __weak GSProtectedPhotosController *weakSelf = self;
+    [alert addAction:[UIAlertAction actionWithTitle:GSL(@"Remove protection")
+                                              style:UIAlertActionStyleDestructive
+                                            handler:^(UIAlertAction *action) {
+                                                [weakSelf forgetProtection:identifier];
+                                            }]];
+    [self presentViewController:alert animated:YES completion:nil];
+}
+- (void)forgetProtection:(NSString *)identifier {
+    if (![self canForgetProtectionForIdentifier:identifier])
+        return;
+    self.saving = YES;
+    [self updateSelection];
+    __weak GSProtectedPhotosController *weakSelf = self;
+    dispatch_async(dispatch_get_global_queue(QOS_CLASS_UTILITY, 0), ^{
+        NSString *result =
+            GSForgetUnavailablePhotoProtection(identifier, GSLocalPhotoProtectionStore());
+        dispatch_async(dispatch_get_main_queue(), ^{
+            GSProtectedPhotosController *page = weakSelf;
+            page.saving = NO;
+            BOOL removed = [result isEqual:@"removed"] || [result isEqual:@"already_removed"];
+            if (removed) {
+                // Discard any poll that captured the flag before this explicit write.
+                page.generation++;
+                page.protectedIDs =
+                    [NSSet setWithArray:GSLocalPhotoProtectionStore().protectedIdentifiers];
+                page.backupBlockedIDs =
+                    [NSSet setWithArray:GSLocalPhotoProtectionStore().backupBlockedIdentifiers];
+                if (![page.protectedIDs containsObject:identifier] && !page.jobs[identifier]) {
+                    NSMutableArray *identifiers = [page.identifiers mutableCopy];
+                    [identifiers removeObject:identifier];
+                    page.identifiers = identifiers;
+                    [page.selected removeObject:identifier];
+                }
+            }
+            [page updateSelection];
+            [page updateEmptyState];
+            [page redraw];
+            [page reloadPhotos];
+            if (removed || !page.active || page.presentedViewController)
+                return;
+            NSString *message =
+                [result isEqual:@"photo_available"]
+                    ? GSL(@"This photo is accessible again. Its protection was kept.")
+                : [result isEqual:@"write_failed"] || [result isEqual:@"store_unavailable"]
+                    ? GSL(@"The saved protection was not changed. Try again later.")
+                    : GSL(@"Could not confirm that this saved ID is unavailable. Protection is "
+                          @"unchanged. Refresh and try again.");
+            UIAlertController *failure =
+                [UIAlertController alertControllerWithTitle:GSL(@"Could not remove protection")
+                                                    message:message
+                                             preferredStyle:UIAlertControllerStyleAlert];
+            [failure addAction:[UIAlertAction actionWithTitle:GSL(@"Done")
+                                                        style:UIAlertActionStyleDefault
+                                                      handler:nil]];
+            [page presentViewController:failure animated:YES completion:nil];
+        });
+    });
 }
 - (NSIndexPath *)tableView:(UITableView *)tableView willDeselectRowAtIndexPath:(NSIndexPath *)path {
     return self.loading || self.saving ? nil : path;
@@ -688,9 +805,10 @@
     NSArray *identifiers = [self.selected.allObjects sortedArrayUsingSelector:@selector(compare:)];
     UIAlertController *alert = [UIAlertController
         alertControllerWithTitle:GSL(@"Back up selected photos again?")
-                         message:GSL(@"The selected photos will be unprotected and queued using "
-                                     @"the current account, upload quality, and album destination. "
-                                     @"Progress and results appear here.")
+                         message:GSL(@"The selected photos will be queued using the current "
+                                     @"account, upload quality, and album destination. Their "
+                                     @"iPhone copies stay protected from deletion sync. Progress "
+                                     @"and results appear here.")
                   preferredStyle:UIAlertControllerStyleAlert];
     [alert addAction:[UIAlertAction actionWithTitle:GSL(@"Cancel")
                                               style:UIAlertActionStyleCancel

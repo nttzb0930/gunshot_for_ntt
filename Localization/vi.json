@@ -288,7 +288,6 @@
   "Kept on this iPhone": "Đang giữ trên iPhone này",
   "Local photo not accessible": "Chưa truy cập được ảnh trên máy",
   "Back up selected photos again?": "Sao lưu lại các ảnh đã chọn?",
-  "The selected photos will be unprotected and queued using the current account, upload quality, and album destination. Progress and results appear here.": "Các ảnh đã chọn sẽ được gỡ bảo vệ và đưa vào hàng đợi theo tài khoản, chất lượng tải lên và album đích hiện tại. Tiến trình và kết quả sẽ hiển thị tại đây.",
   "Reconnect to Google Photos before backing up again.": "Kết nối lại Google Photos trước khi sao lưu lại.",
   "Retry this upload?": "Thử tải lên lại mục này?",
   "Photo access is not granted. Check Photos permission in Settings.": "Chưa được cấp quyền truy cập ảnh. Kiểm tra quyền Ảnh trong Cài đặt.",
@@ -308,5 +307,13 @@
   "Photo found. Its current ID does not match any saved protection entry. No photos were linked.": "Đã đọc được ảnh, nhưng ID hiện tại không khớp dấu bảo vệ nào đã lưu. Chưa liên kết hay thay đổi ảnh nào.",
   "The picker returned an ID, but PhotoKit did not return the selected photo.": "Trình chọn có trả ID, nhưng PhotoKit không tìm thấy ảnh vừa chọn.",
   "The picker did not return a photo ID. Protection is unchanged.": "Trình chọn không trả ID ảnh. Dấu bảo vệ vẫn được giữ nguyên.",
-  "Could not check the selected photo. See upload diagnostics for details.": "Chưa kiểm tra được ảnh vừa chọn. Xem chi tiết trong chẩn đoán tải lên."
+  "Could not check the selected photo. See upload diagnostics for details.": "Chưa kiểm tra được ảnh vừa chọn. Xem chi tiết trong chẩn đoán tải lên.",
+  "Remove protection": "Gỡ dấu bảo vệ",
+  "Remove saved protection?": "Gỡ dấu bảo vệ đã lưu?",
+  "This removes only the saved protection entry, without deleting photos or starting an upload. If the old ID becomes accessible again, GoToHP will no longer block its backup or local deletion.": "Chỉ gỡ dấu bảo vệ đã lưu, không xóa ảnh hay bắt đầu tải lên. Nếu ID cũ truy cập được trở lại, GoToHP sẽ không còn chặn sao lưu hoặc xóa bản trên máy của ảnh đó.",
+  "This photo is accessible again. Its protection was kept.": "Ảnh này đã truy cập được trở lại. Dấu bảo vệ vẫn được giữ nguyên.",
+  "Could not confirm that this saved ID is unavailable. Protection is unchanged. Refresh and try again.": "Chưa xác nhận được ID đã lưu không còn truy cập được. Dấu bảo vệ vẫn được giữ. Hãy làm mới rồi thử lại.",
+  "Could not remove protection": "Chưa gỡ được dấu bảo vệ",
+  "The selected photos will be queued using the current account, upload quality, and album destination. Their iPhone copies stay protected from deletion sync. Progress and results appear here.": "Các ảnh đã chọn sẽ được đưa vào hàng đợi với tài khoản, chất lượng và album đích hiện tại. Bản trên iPhone vẫn được bảo vệ khỏi yêu cầu xóa đồng bộ. Tiến trình và kết quả hiển thị tại đây.",
+  "Backup allowed; iPhone copy protected": "Cho phép sao lưu · Vẫn bảo vệ bản iPhone"
 }

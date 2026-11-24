@@ -49,7 +49,7 @@ static NSDictionary *GSSafePhotoLookup(NSDictionary *report) {
 
 @implementation GSLocalPhotoProtection {
     NSURL *_url;
-    NSSet<NSString *> *_identifiers;
+    NSSet<NSString *> *_identifiers, *_backupAllowed;
     BOOL _healthy;
     NSUInteger _blockedUploads, _unprotectAttempts, _unprotectSucceeded, _unprotectFailed;
     NSString *_lastUnprotectResult;
@@ -62,6 +62,7 @@ static NSDictionary *GSSafePhotoLookup(NSDictionary *report) {
         return nil;
     _url = url;
     _identifiers = [NSSet set];
+    _backupAllowed = [NSSet set];
     _healthy = url.isFileURL;
     if (!_healthy)
         return self;
@@ -78,7 +79,8 @@ static NSDictionary *GSSafePhotoLookup(NSDictionary *report) {
     NSData *data = [NSData dataWithContentsOfURL:url];
     id state = data ? [NSJSONSerialization JSONObjectWithData:data options:0 error:nil] : nil;
     id ids = [state isKindOfClass:NSDictionary.class] ? state[@"localIDs"] : nil;
-    if (![state isKindOfClass:NSDictionary.class] || ![state[@"schema"] isEqual:@1] ||
+    BOOL legacy = [state isKindOfClass:NSDictionary.class] && [state[@"schema"] isEqual:@1];
+    if (![state isKindOfClass:NSDictionary.class] || (!legacy && ![state[@"schema"] isEqual:@2]) ||
         ![ids isKindOfClass:NSArray.class] || [ids count] > 100000) {
         _healthy = NO;
         return self;
@@ -88,7 +90,19 @@ static NSDictionary *GSSafePhotoLookup(NSDictionary *report) {
             _healthy = NO;
             return self;
         }
-    _identifiers = [NSSet setWithArray:ids];
+    NSSet *protected = [NSSet setWithArray:ids];
+    id allowed = legacy ? @[] : state[@"backupAllowedIDs"];
+    if (![allowed isKindOfClass:NSArray.class] || [allowed count] > 100000) {
+        _healthy = NO;
+        return self;
+    }
+    for (id value in allowed)
+        if (!GSValidProtectedID(value) || ![protected containsObject:value]) {
+            _healthy = NO;
+            return self;
+        }
+    _identifiers = protected;
+    _backupAllowed = [NSSet setWithArray:allowed];
     return self;
 }
 - (BOOL)healthy {
@@ -113,11 +127,28 @@ static NSDictionary *GSSafePhotoLookup(NSDictionary *report) {
                         : @[];
     }
 }
+- (BOOL)blocksBackupForIdentifier:(NSString *)identifier {
+    @synchronized(self) {
+        return !_healthy || ([_identifiers containsObject:identifier ?: @""] &&
+                             ![_backupAllowed containsObject:identifier ?: @""]);
+    }
+}
+- (NSArray<NSString *> *)backupBlockedIdentifiers {
+    @synchronized(self) {
+        if (!_healthy)
+            return @[];
+        NSMutableSet *blocked = [_identifiers mutableCopy];
+        [blocked minusSet:_backupAllowed];
+        return [blocked.allObjects sortedArrayUsingSelector:@selector(compare:)];
+    }
+}
 - (NSDictionary *)diagnostics {
     @synchronized(self) {
         return @{
             @"storeHealthy" : @(_healthy),
             @"protectedCount" : @(_identifiers.count),
+            @"backupBlockedCount" : @(_identifiers.count - _backupAllowed.count),
+            @"backupAllowedCount" : @(_backupAllowed.count),
             @"blockedUploads" : @(_blockedUploads),
             @"unprotectAttempts" : @(_unprotectAttempts),
             @"unprotectSucceeded" : @(_unprotectSucceeded),
@@ -216,38 +247,71 @@ static NSDictionary *GSSafePhotoLookup(NSDictionary *report) {
                 return NO;
             }
         NSMutableSet *next = [_identifiers mutableCopy];
-        for (NSString *identifier in identifiers)
+        NSMutableSet *allowed = [_backupAllowed mutableCopy];
+        for (NSString *identifier in identifiers) {
             if (protect)
                 [next addObject:identifier];
             else
                 [next removeObject:identifier];
+            // A new cloud-only deletion resets consent; normal deletion clears both.
+            [allowed removeObject:identifier];
+        }
         if (next.count > 100000) {
             if (error)
                 *error = GSProtectionError();
             return NO;
         }
-        NSDictionary *state = @{
-            @"schema" : @1,
-            @"localIDs" : [next.allObjects sortedArrayUsingSelector:@selector(compare:)]
-        };
-        NSData *data = [NSJSONSerialization dataWithJSONObject:state options:0 error:error];
-        if (data.length > 32 * 1024 * 1024) {
+        return [self saveIdentifiers:next backupAllowed:allowed error:error];
+    }
+}
+- (BOOL)allowRebackupForIdentifiers:(NSArray<NSString *> *)identifiers error:(NSError **)error {
+    @synchronized(self) {
+        if (!_healthy || ![identifiers isKindOfClass:NSArray.class] || !identifiers.count ||
+            identifiers.count > 100000) {
             if (error)
                 *error = GSProtectionError();
             return NO;
         }
-        NSURL *parent = [_url URLByDeletingLastPathComponent];
-        if (!data ||
-            ![NSFileManager.defaultManager createDirectoryAtURL:parent
-                                    withIntermediateDirectories:YES
-                                                     attributes:@{NSFilePosixPermissions : @0700}
-                                                          error:error] ||
-            ![data writeToURL:_url options:NSDataWritingAtomic error:error])
-            return NO;
-        [_url setResourceValue:@YES forKey:NSURLIsExcludedFromBackupKey error:nil];
-        _identifiers = [next copy];
-        return YES;
+        NSMutableSet *allowed = [_backupAllowed mutableCopy];
+        for (id value in identifiers) {
+            if (!GSValidProtectedID(value)) {
+                if (error)
+                    *error = GSProtectionError();
+                return NO;
+            }
+            if ([_identifiers containsObject:value])
+                [allowed addObject:value];
+        }
+        return [self saveIdentifiers:_identifiers backupAllowed:allowed error:error];
     }
+}
+// Called under the store lock. Commit both snapshots only after the atomic write.
+- (BOOL)saveIdentifiers:(NSSet *)identifiers
+          backupAllowed:(NSSet *)allowed
+                  error:(NSError **)error {
+    NSDictionary *state = @{
+        @"schema" : @2,
+        @"localIDs" : [identifiers.allObjects sortedArrayUsingSelector:@selector(compare:)],
+        @"backupAllowedIDs" : [allowed.allObjects sortedArrayUsingSelector:@selector(compare:)]
+    };
+    NSData *data = [NSJSONSerialization dataWithJSONObject:state options:0 error:error];
+    if (data.length > 32 * 1024 * 1024) {
+        if (error)
+            *error = GSProtectionError();
+        return NO;
+    }
+    NSURL *parent = [_url URLByDeletingLastPathComponent];
+    if (!data ||
+        ![NSFileManager.defaultManager createDirectoryAtURL:parent
+                                withIntermediateDirectories:YES
+                                                 attributes:@{NSFilePosixPermissions : @0700}
+                                                      error:error] ||
+        ![data writeToURL:_url options:NSDataWritingAtomic error:error])
+        return NO;
+    [_url setResourceValue:@YES forKey:NSURLIsExcludedFromBackupKey error:nil];
+    _identifiers = [identifiers copy];
+    _backupAllowed = [allowed copy];
+    return YES;
 }
 @end
 

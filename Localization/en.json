@@ -288,7 +288,6 @@
   "Kept on this iPhone": "Kept on this iPhone",
   "Local photo not accessible": "Local photo not accessible",
   "Back up selected photos again?": "Back up selected photos again?",
-  "The selected photos will be unprotected and queued using the current account, upload quality, and album destination. Progress and results appear here.": "The selected photos will be unprotected and queued using the current account, upload quality, and album destination. Progress and results appear here.",
   "Reconnect to Google Photos before backing up again.": "Reconnect to Google Photos before backing up again.",
   "Retry this upload?": "Retry this upload?",
   "Photo access is not granted. Check Photos permission in Settings.": "Photo access is not granted. Check Photos permission in Settings.",
@@ -308,5 +307,13 @@
   "Photo found. Its current ID does not match any saved protection entry. No photos were linked.": "Photo found. Its current ID does not match any saved protection entry. No photos were linked.",
   "The picker returned an ID, but PhotoKit did not return the selected photo.": "The picker returned an ID, but PhotoKit did not return the selected photo.",
   "The picker did not return a photo ID. Protection is unchanged.": "The picker did not return a photo ID. Protection is unchanged.",
-  "Could not check the selected photo. See upload diagnostics for details.": "Could not check the selected photo. See upload diagnostics for details."
+  "Could not check the selected photo. See upload diagnostics for details.": "Could not check the selected photo. See upload diagnostics for details.",
+  "Remove protection": "Remove protection",
+  "Remove saved protection?": "Remove saved protection?",
+  "This removes only the saved protection entry, without deleting photos or starting an upload. If the old ID becomes accessible again, GoToHP will no longer block its backup or local deletion.": "This removes only the saved protection entry, without deleting photos or starting an upload. If the old ID becomes accessible again, GoToHP will no longer block its backup or local deletion.",
+  "This photo is accessible again. Its protection was kept.": "This photo is accessible again. Its protection was kept.",
+  "Could not confirm that this saved ID is unavailable. Protection is unchanged. Refresh and try again.": "Could not confirm that this saved ID is unavailable. Protection is unchanged. Refresh and try again.",
+  "Could not remove protection": "Could not remove protection",
+  "The selected photos will be queued using the current account, upload quality, and album destination. Their iPhone copies stay protected from deletion sync. Progress and results appear here.": "The selected photos will be queued using the current account, upload quality, and album destination. Their iPhone copies stay protected from deletion sync. Progress and results appear here.",
+  "Backup allowed; iPhone copy protected": "Backup allowed; iPhone copy protected"
 }

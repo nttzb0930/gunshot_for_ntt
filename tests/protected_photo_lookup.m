@@ -1,4 +1,5 @@
 #import "../Native/GSProtectedPhotoLookup.h"
+#import "../Native/GSLocalPhotoProtection.h"
 #import <Photos/Photos.h>
 #include <assert.h>
 
@@ -86,6 +87,23 @@ static NSDictionary *Lookup(NSArray *identifiers) {
     assert(![json containsString:@"private-"] && ![json containsString:@".jpg"]);
     return result;
 }
+static NSString *Forget(NSString *identifier, GSLocalPhotoProtection *store) {
+    __block NSString *result;
+    dispatch_semaphore_t done = dispatch_semaphore_create(0);
+    dispatch_async(dispatch_get_global_queue(QOS_CLASS_UTILITY, 0), ^{
+        result = GSForgetUnavailablePhotoProtection(identifier, store);
+        dispatch_semaphore_signal(done);
+    });
+    assert(dispatch_semaphore_wait(done, dispatch_time(DISPATCH_TIME_NOW, 5 * NSEC_PER_SEC)) == 0);
+    return result;
+}
+@interface GSCleanupFailingStore : GSLocalPhotoProtection
+@end
+@implementation GSCleanupFailingStore
+- (BOOL)allowBackupForIdentifiers:(NSArray<NSString *> *)identifiers error:(NSError **)error {
+    return NO;
+}
+@end
 static NSDictionary *CheckSelection(NSString *identifier, NSArray *saved) {
     __block NSDictionary *result;
     dispatch_semaphore_t done = dispatch_semaphore_create(0);
@@ -200,6 +218,41 @@ int main(void) {
         assert([result[@"report"][@"error"] isEqual:@"invalid_identifiers"]);
         assert(GSProtectedPhotoLookupMessage(@"not_returned").length &&
                GSProtectedPhotoLookupMessage(@"permission_denied").length);
+        NSURL *root =
+            [NSURL fileURLWithPath:[NSTemporaryDirectory()
+                                       stringByAppendingPathComponent:NSUUID.UUID.UUIDString]
+                       isDirectory:YES];
+        NSURL *file = [root URLByAppendingPathComponent:@"protection.json"];
+        GSLocalPhotoProtection *store = [[GSLocalPhotoProtection alloc] initWithURL:file];
+        assert(([store updateIdentifiers:@[ @"private-a", @"private-missing" ]
+                                 protect:YES
+                                   error:nil]));
+        NSData *before = [NSData dataWithContentsOfURL:file];
+        assert([Forget(@"private-a", store) isEqual:@"photo_available"]);
+        Authorization = PHAuthorizationStatusLimited;
+        assert([Forget(@"private-missing", store) isEqual:@"lookup_unavailable"]);
+        Authorization = PHAuthorizationStatusDenied;
+        assert([Forget(@"private-missing", store) isEqual:@"lookup_unavailable"]);
+        Authorization = PHAuthorizationStatusAuthorized;
+        NilResult = YES;
+        assert([Forget(@"private-missing", store) isEqual:@"lookup_unavailable"]);
+        NilResult = NO;
+        ChangePermission = YES;
+        assert([Forget(@"private-missing", store) isEqual:@"lookup_unavailable"]);
+        ChangePermission = NO;
+        Authorization = PHAuthorizationStatusAuthorized;
+        assert(store.count == 2 && [[NSData dataWithContentsOfURL:file] isEqual:before]);
+        GSCleanupFailingStore *failing = [[GSCleanupFailingStore alloc] initWithURL:file];
+        assert([Forget(@"private-missing", failing) isEqual:@"write_failed"] &&
+               [failing contains:@"private-missing"]);
+        assert([[NSData dataWithContentsOfURL:file] isEqual:before]);
+        assert([Forget(@"private-missing", store) isEqual:@"removed"]);
+        GSLocalPhotoProtection *reopened = [[GSLocalPhotoProtection alloc] initWithURL:file];
+        assert(reopened.count == 1 && [reopened contains:@"private-a"] &&
+               ![reopened contains:@"private-missing"]);
+        assert([Forget(@"private-missing", store) isEqual:@"already_removed"]);
+        assert([Forget(@"private-missing", nil) isEqual:@"store_unavailable"]);
+        [NSFileManager.defaultManager removeItemAtURL:root error:nil];
         NSLog(@"PASS protected-photo lookup permissions, missing IDs, bounded fetches, metadata "
               @"errors, partial failures and redacted reports");
     }

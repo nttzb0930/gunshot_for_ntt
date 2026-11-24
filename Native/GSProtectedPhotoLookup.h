@@ -9,3 +9,9 @@ FOUNDATION_EXPORT NSString *GSProtectedPhotoLookupMessage(NSString *reason);
 // The result contains fixed codes/counts only and is safe for diagnostics.
 FOUNDATION_EXPORT NSDictionary *GSCheckProtectedPhotoSelection(NSString *identifier,
                                                                NSArray<NSString *> *saved);
+
+@class GSLocalPhotoProtection;
+// Explicit, confirmed user action only. Rechecks full Photos access and absence
+// before persisting removal. Returns a fixed result code, never deletes media.
+FOUNDATION_EXPORT NSString *GSForgetUnavailablePhotoProtection(NSString *identifier,
+                                                               GSLocalPhotoProtection *store);

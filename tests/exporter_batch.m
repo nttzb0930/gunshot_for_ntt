@@ -145,7 +145,8 @@ NSDictionary *GSRequest(NSDictionary *request, NSError **error) {
     }
     if ([op isEqual:@"seal"]) {
         if (RebackupAsset)
-            assert(![GSLocalPhotoProtectionStore() contains:RebackupAsset]);
+            assert([GSLocalPhotoProtectionStore() contains:RebackupAsset] &&
+                   ![GSLocalPhotoProtectionStore() blocksBackupForIdentifier:RebackupAsset]);
         for (NSUInteger i = 0; i < Received.count; i++) {
             BOOL movie = [ExpectedResources[i][@"name"] isEqual:@"original.MOV"];
             assert([Received[i] isEqual:OriginalBytes(movie)]);
@@ -260,10 +261,12 @@ static void CheckRebackup(void) {
         ^BOOL {
             called = YES;
             assert([store contains:identifier]);
-            return [store allowBackupForIdentifiers:@[ identifier ] error:nil];
+            return [store allowRebackupForIdentifiers:@[ identifier ] error:nil];
         },
         nil));
-    assert(called && Queued == before + 1 && ![store contains:identifier]);
+    assert(called && Queued == before + 1 && [store contains:identifier] &&
+           ![store blocksBackupForIdentifier:identifier]);
+    assert(GSExportAsset(asset, directory, nil).count == 1);
     [NSFileManager.defaultManager removeItemAtURL:directory error:nil];
 }
 int main(void) {
@@ -300,9 +303,11 @@ int main(void) {
             });
         assert(dispatch_group_wait(group, dispatch_time(DISPATCH_TIME_NOW, 10 * NSEC_PER_SEC)) ==
                0);
-        dispatch_sync(dispatch_get_global_queue(QOS_CLASS_UTILITY, 0), ^{
+        dispatch_group_async(group, dispatch_get_global_queue(QOS_CLASS_UTILITY, 0), ^{
             CheckRebackup();
         });
+        assert(dispatch_group_wait(group, dispatch_time(DISPATCH_TIME_NOW, 10 * NSEC_PER_SEC)) ==
+               0);
         assert(atomic_load(&PeakExports) == 1);
         dispatch_group_async(group, dispatch_get_global_queue(QOS_CLASS_UTILITY, 0), ^{
             PHAssetResource *raw =

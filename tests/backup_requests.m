@@ -11,6 +11,7 @@
 #endif
 #import "host_profile.h"
 #import "../Native/GSBackupRequests.h"
+#import "../Native/GSLocalPhotoProtection.h"
 #import "../Native/GSNativeRouting.h"
 #import "native_account_fixture.h"
 #import "../Shared/IPCProtocol.h"
@@ -361,6 +362,24 @@ static void Drain(NSUInteger expected) {
     while (successes + failures < expected && deadline.timeIntervalSinceNow > 0)
         [NSRunLoop.currentRunLoop runUntilDate:[NSDate dateWithTimeIntervalSinceNow:0.01]];
     assert(successes + failures == expected);
+}
+static void CheckBackupConsent(void) {
+    GSLocalPhotoProtection *store = GSLocalPhotoProtectionStore();
+    id<ProgressRequest> blocked = Request(GMUAssetUploadRequest.class, primaryAccount.accountID);
+    NSString *identifier = [blocked asset].localIdentifier;
+    assert([store updateIdentifiers:@[ identifier ] protect:YES error:nil]);
+    NSUInteger before = queued, finished = successes + failures, passed = successes;
+    [blocked start];
+    Drain(finished + 1);
+    assert(queued == before && successes == passed);
+    assert([store allowRebackupForIdentifiers:@[ identifier ] error:nil]);
+    id<ProgressRequest> allowed = Request(GMUAssetUploadRequest.class, primaryAccount.accountID);
+    [allowed asset].localIdentifier = identifier;
+    [allowed start];
+    Drain(finished + 2);
+    assert(queued == before + 1 && successes == passed + 1);
+    assert([store contains:identifier] && ![store blocksBackupForIdentifier:identifier]);
+    assert([store updateIdentifiers:@[ identifier ] protect:NO error:nil]);
 }
 static void Scotty(id object, SEL selector, id asset, BOOL cellular, BOOL background, id start,
                    id progress, void (^released)(void), void (^done)(id, id)) {
@@ -725,6 +744,7 @@ int main(void) {
         assert(queued == before && nativeStarts == starts);
         ((GSFixtureIdentity *)primaryAccount->_ssoIdentity).hasValidAuth = YES;
         assert(GSNativeIdentityMatches(@"fixture-user-A"));
+        CheckBackupConsent();
         CheckProgress();
         CheckBackground();
         CheckOverlappingReconciliation();

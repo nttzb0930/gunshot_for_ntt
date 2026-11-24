@@ -288,7 +288,6 @@
   "Kept on this iPhone": "保留在此 iPhone 上",
   "Local photo not accessible": "无法访问设备上的照片",
   "Back up selected photos again?": "重新备份所选照片？",
-  "The selected photos will be unprotected and queued using the current account, upload quality, and album destination. Progress and results appear here.": "将取消所选照片的保护，并使用当前账号、上传质量和目标相册加入队列。进度和结果将显示在此处。",
   "Reconnect to Google Photos before backing up again.": "请先重新连接 Google 相册，再重新备份。",
   "Retry this upload?": "重试此次上传？",
   "Photo access is not granted. Check Photos permission in Settings.": "尚未获得照片访问权限。请在设置中检查照片权限。",
@@ -308,5 +307,13 @@
   "Photo found. Its current ID does not match any saved protection entry. No photos were linked.": "已读取照片，但其当前 ID 与任何已保存的保护记录均不匹配。未关联任何照片。",
   "The picker returned an ID, but PhotoKit did not return the selected photo.": "选择器返回了 ID，但 PhotoKit 未返回所选照片。",
   "The picker did not return a photo ID. Protection is unchanged.": "选择器未返回照片 ID。保护状态保持不变。",
-  "Could not check the selected photo. See upload diagnostics for details.": "无法检查所选照片。请在上传诊断中查看详情。"
+  "Could not check the selected photo. See upload diagnostics for details.": "无法检查所选照片。请在上传诊断中查看详情。",
+  "Remove protection": "移除保护",
+  "Remove saved protection?": "移除已保存的保护？",
+  "This removes only the saved protection entry, without deleting photos or starting an upload. If the old ID becomes accessible again, GoToHP will no longer block its backup or local deletion.": "仅移除已保存的保护记录，不会删除照片或开始上传。如果旧 ID 恢复可访问，GoToHP 将不再阻止该照片的备份或本地删除。",
+  "This photo is accessible again. Its protection was kept.": "此照片已恢复可访问，保护状态保持不变。",
+  "Could not confirm that this saved ID is unavailable. Protection is unchanged. Refresh and try again.": "无法确认已保存的 ID 已不可访问。保护状态保持不变，请刷新后重试。",
+  "Could not remove protection": "无法移除保护",
+  "The selected photos will be queued using the current account, upload quality, and album destination. Their iPhone copies stay protected from deletion sync. Progress and results appear here.": "所选照片将使用当前账号、上传质量和目标相册加入队列。iPhone 上的副本仍受保护，不会被同步删除。进度和结果会显示在此处。",
+  "Backup allowed; iPhone copy protected": "允许备份 · 仍保护 iPhone 副本"
 }
