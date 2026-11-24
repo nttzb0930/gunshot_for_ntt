@@ -55,7 +55,8 @@
 }
 @end
 
-@interface GSProtectedPhotosController () <PHPickerViewControllerDelegate>
+@interface GSProtectedPhotosController () <PHPickerViewControllerDelegate,
+                                           UIAdaptivePresentationControllerDelegate>
 @property (nonatomic, copy) NSArray<NSString *> *identifiers;
 @property (nonatomic, copy) NSSet<NSString *> *protectedIDs;
 @property (nonatomic, copy) NSDictionary<NSString *, PHAsset *> *assets;
@@ -67,6 +68,7 @@
 @property (nonatomic, strong) NSMutableSet<NSString *> *selected;
 @property (nonatomic, strong) NSMutableDictionary *preparation, *submitted;
 @property (nonatomic, strong) UIBarButtonItem *backupButton;
+@property (nonatomic, strong) PHPickerViewController *photoCheckPicker;
 @property (nonatomic, strong) id foregroundObserver;
 @property (nonatomic, strong) NSTimer *timer;
 @property (nonatomic) BOOL active, loading, refreshing, saving, previousToolbarHidden,
@@ -590,24 +592,45 @@
     PHPickerViewController *picker =
         [[PHPickerViewController alloc] initWithConfiguration:configuration];
     picker.delegate = self;
+    self.photoCheckPicker = picker;
     self.checkingPhoto = YES;
     [self updateSelection];
     [self redraw];
     [self presentViewController:picker animated:YES completion:nil];
+    picker.presentationController.delegate = self;
+}
+- (void)finishPhotoCheck {
+    self.checkingPhoto = NO;
+    self.photoCheckPicker = nil;
+    // Reset visible controls even if refreshing is deferred, offline or unchanged.
+    [self updateSelection];
+    [self redraw];
+}
+- (void)presentationControllerDidDismiss:(UIPresentationController *)presentationController {
+    if (presentationController.presentedViewController != self.photoCheckPicker)
+        return;
+    // Interactive dismissal need not deliver PHPicker's result callback.
+    [self finishPhotoCheck];
+    [self reloadPhotos];
 }
 - (void)picker:(PHPickerViewController *)picker
     didFinishPicking:(NSArray<PHPickerResult *> *)results {
+    if (picker != self.photoCheckPicker)
+        return;
+    self.photoCheckPicker = nil;
     NSString *identifier = [results.firstObject.assetIdentifier copy];
     __weak GSProtectedPhotosController *weakSelf = self;
+    if (!results.count) {
+        [self finishPhotoCheck];
+        [self dismissViewControllerAnimated:YES
+                                 completion:^{
+                                     [weakSelf reloadPhotos];
+                                 }];
+        return;
+    }
     [self
         dismissViewControllerAnimated:YES
                            completion:^{
-                               GSProtectedPhotosController *controller = weakSelf;
-                               if (!results.count) {
-                                   controller.checkingPhoto = NO;
-                                   [controller reloadPhotos];
-                                   return;
-                               }
                                dispatch_async(dispatch_get_global_queue(QOS_CLASS_UTILITY, 0), ^{
                                    NSDictionary *report = GSCheckProtectedPhotoSelection(
                                        identifier,
@@ -615,9 +638,7 @@
                                    [GSLocalPhotoProtectionStore() recordPhotoSelectionCheck:report];
                                    dispatch_async(dispatch_get_main_queue(), ^{
                                        GSProtectedPhotosController *page = weakSelf;
-                                       page.checkingPhoto = NO;
-                                       [page updateSelection];
-                                       [page redraw];
+                                       [page finishPhotoCheck];
                                        if (!page.active || page.presentedViewController)
                                            return;
                                        NSString *outcome = report[@"outcome"];
